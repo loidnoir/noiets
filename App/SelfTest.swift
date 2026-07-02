@@ -64,6 +64,10 @@ enum SelfTest {
             if let session = session {
                 out["index"] = indexChecks(session)
             }
+            if ProcessInfo.processInfo.environment["NOIETS_PERF"] == "1",
+               let editorView = findEditorView(in: window), let session = session {
+                out["perf"] = perfChecks(editorView, session: session)
+            }
             if let wc = window.windowController as? MainWindowController {
                 out["palette"] = paletteChecks(wc)
                 if let editorView = findEditorView(in: window), let session = session {
@@ -241,6 +245,49 @@ enum SelfTest {
         result["completionVisible"] = editorView.isWikiCompletionActive
         key("\r", keyCode: 36)
         result["afterCompletion"] = tv.string
+        return result
+    }
+
+    /// Perf gates from the plan: a 10k-word note must type smoothly, and a
+    /// big vault must search fast.
+    private static func perfChecks(_ editorView: MarkdownEditorView, session: VaultSession) -> [String: Any] {
+        var result: [String: Any] = [:]
+        let tv = editorView.textView
+        editorView.onTextChange = nil
+
+        // Build ~10k words of mixed markdown.
+        var doc = "# Big Note\n\n"
+        for i in 0..<500 {
+            doc += "## Section \(i % 40)\n\nSome **bold** text with a [[Link \(i)]] and `code_\(i)` plus #tag\(i % 25) filler words here to bulk the line out properly.\n\n- item one\n- item two\n\n"
+        }
+        result["docWords"] = doc.split(separator: " ").count
+
+        let loadStart = Date()
+        editorView.load(text: doc)
+        result["loadMs"] = Int(Date().timeIntervalSince(loadStart) * 1000)
+
+        // Simulate 60 keystrokes mid-document through the full pipeline.
+        let mid = (doc as NSString).length / 2
+        let insertAt = (doc as NSString).lineRange(for: NSRange(location: mid, length: 0)).location
+        tv.setSelectedRange(NSRange(location: insertAt, length: 0))
+        let typeStart = Date()
+        for ch in "the quick brown fox jumps over the lazy dog and keeps going!" {
+            tv.insertText(String(ch), replacementRange: tv.selectedRange())
+        }
+        let elapsed = Date().timeIntervalSince(typeStart) * 1000
+        result["keystrokes"] = 61
+        result["typingTotalMs"] = Int(elapsed)
+        result["perKeystrokeMs"] = Double(Int(elapsed / 61 * 100)) / 100
+
+        // Search latency on whatever the index currently holds.
+        if let index = session.index {
+            let searchStart = Date()
+            let hits = (try? index.searchNotes("filler")) ?? []
+            result["searchMs"] = Int(Date().timeIntervalSince(searchStart) * 1000)
+            result["searchHits"] = hits.count
+        }
+
+        editorView.load(text: "restored\n")
         return result
     }
 }

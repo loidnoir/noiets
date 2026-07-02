@@ -15,6 +15,7 @@ private func put(
         .replacingOccurrences(of: ".md", with: "")
     let extracted = NoteExtractor.extract(markdown: markdown, fallbackTitle: fallback)
     try index.upsert(relPath: relPath, extracted: extracted, mtime: mtime, size: size, created: 900)
+    try index.resolveLinks() // batch-level in production (Reindexer)
 }
 
 @Suite struct ExtractorTests {

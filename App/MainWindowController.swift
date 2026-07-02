@@ -1,5 +1,7 @@
 import AppKit
 import IndexKit
+import MarkdownKit
+import UniformTypeIdentifiers
 import VaultStore
 
 /// The single main window: two-pane split (sidebar | content host). The host
@@ -156,9 +158,13 @@ final class MainWindowController: NSWindowController {
 
     /// [[target]] navigation with Obsidian-style create-on-missing.
     func openWikiLink(_ target: String) {
-        guard let index = session.index else { return }
-        if let existing = try? index.note(matchingLinkTarget: target) {
-            let url = session.url(forRelPath: existing.relPath)
+        // Index first (matches titles too), live tree as the fallback so a
+        // still-warming index never causes a duplicate note.
+        let resolved = (try? session.index?.note(matchingLinkTarget: target))
+            .flatMap { $0 }
+            .map { session.url(forRelPath: $0.relPath) }
+            ?? session.noteInTree(matching: target)
+        if let url = resolved {
             open(noteAt: url)
             sidebarVC.select(url: url, notify: false)
             return
@@ -244,6 +250,22 @@ final class MainWindowController: NSWindowController {
         sidebarVC.selectFixed(.search) // triggers showFixed(.search)
     }
 
+    @objc func exportHTML(_ sender: Any?) {
+        guard let url = session.currentNoteURL, let window else { return }
+        session.flushPendingSave()
+        let title = url.deletingPathExtension().lastPathComponent
+        let markdown = editorVC.editor.string
+
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "\(title).html"
+        panel.allowedContentTypes = [.html]
+        panel.beginSheetModal(for: window) { response in
+            guard response == .OK, let dest = panel.url else { return }
+            let html = HTMLExport.html(from: markdown, title: title)
+            try? Data(html.utf8).write(to: dest)
+        }
+    }
+
     // MARK: Overlays
 
     @objc func quickOpen(_ sender: Any?) {
@@ -312,6 +334,7 @@ extension MainWindowController: NSMenuItemValidation {
             #selector(MainWindowController.saveNote(_:)),
             #selector(MainWindowController.revealInFinder(_:)),
             #selector(MainWindowController.moveNoteToTrash(_:)),
+            #selector(MainWindowController.exportHTML(_:)),
         ]
         if let action = menuItem.action, needsOpenNote.contains(action) {
             return session.currentNoteURL != nil

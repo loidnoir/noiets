@@ -132,6 +132,23 @@ final class VaultSession {
         vault.rootURL.appendingPathComponent(relPath)
     }
 
+    /// Filename-stem match against the live tree — the create-on-missing
+    /// safety net while the index is still warming up after launch.
+    func noteInTree(matching target: String) -> URL? {
+        let lowered = target.lowercased()
+        func walk(_ node: FileNode) -> URL? {
+            for child in node.children {
+                if child.isFolder {
+                    if let found = walk(child) { return found }
+                } else if child.title.lowercased() == lowered {
+                    return child.url
+                }
+            }
+            return nil
+        }
+        return walk(tree)
+    }
+
     // MARK: Mutations
 
     @discardableResult

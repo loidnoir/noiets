@@ -149,6 +149,61 @@ final class TableRowFragment: NSTextLayoutFragment {
     }
 }
 
+/// Accent bar alongside blockquote lines (glyphs still draw).
+final class QuoteBarFragment: NSTextLayoutFragment {
+    private let theme: EditorTheme
+
+    init(textElement: NSTextElement, range: NSTextRange?, theme: EditorTheme) {
+        self.theme = theme
+        super.init(textElement: textElement, range: range)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override var renderingSurfaceBounds: CGRect {
+        super.renderingSurfaceBounds.union(CGRect(x: -6, y: 0, width: 8, height: layoutFragmentFrame.height))
+    }
+
+    override func draw(at point: CGPoint, in context: CGContext) {
+        context.saveGState()
+        context.setFillColor(theme.mutedColor.withAlphaComponent(0.5).cgColor)
+        context.fill(CGRect(x: point.x - 4, y: point.y, width: 3, height: layoutFragmentFrame.height))
+        context.restoreGState()
+        super.draw(at: point, in: context)
+    }
+}
+
+/// A horizontal rule renders as an actual thin line.
+final class RuleFragment: NSTextLayoutFragment {
+    private let theme: EditorTheme
+
+    init(textElement: NSTextElement, range: NSTextRange?, theme: EditorTheme) {
+        self.theme = theme
+        super.init(textElement: textElement, range: range)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override var layoutFragmentFrame: CGRect {
+        var frame = super.layoutFragmentFrame
+        frame.size.height = 24
+        return frame
+    }
+
+    override var renderingSurfaceBounds: CGRect {
+        super.renderingSurfaceBounds.union(CGRect(x: 0, y: 0, width: 4000, height: 24))
+    }
+
+    override func draw(at point: CGPoint, in context: CGContext) {
+        context.saveGState()
+        context.setFillColor(theme.mutedColor.withAlphaComponent(0.35).cgColor)
+        context.fill(CGRect(x: point.x, y: point.y + 12, width: 640, height: 1))
+        context.restoreGState()
+    }
+}
+
 /// The |---|---| row collapses to a small gap (the header hairline stands in).
 final class TableDelimiterFragment: NSTextLayoutFragment {
     private let theme: EditorTheme

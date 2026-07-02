@@ -158,7 +158,9 @@ public final class NoteIndex: Sendable {
                 )
             }
 
-            // Outgoing links (resolution happens after)
+            // Outgoing links. Resolution is batch-level: callers run
+            // resolveLinks() once per batch (per-upsert resolution is O(n²)
+            // across a large reconcile).
             try db.execute(sql: "DELETE FROM link WHERE sourceNoteId = ?", arguments: [noteId])
             for link in extracted.links {
                 try db.execute(
@@ -170,7 +172,6 @@ public final class NoteIndex: Sendable {
                 )
             }
         }
-        try resolveLinks()
     }
 
     public func deleteNote(relPath: String) throws {

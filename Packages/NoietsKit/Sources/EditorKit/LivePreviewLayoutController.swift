@@ -30,6 +30,8 @@ public final class LivePreviewLayoutController: NSObject {
         case math(latex: String)
         case tableRow(cells: [String], isHeader: Bool, columns: [CGFloat])
         case tableDelimiter
+        case quote
+        case rule
     }
 
     private func role(forLineAt charIndex: Int, text: NSString) -> LineRole {
@@ -50,6 +52,10 @@ public final class LivePreviewLayoutController: NSObject {
         switch line.kind {
         case .code, .fenceDelimiter:
             return .code // band always (even while editing)
+        case .blockquote:
+            return .quote
+        case .horizontalRule where !active:
+            return .rule
         case .tableDelimiterRow where !active:
             return .tableDelimiter
         case .tableRow where !active:
@@ -172,6 +178,10 @@ extension LivePreviewLayoutController: @preconcurrency NSTextLayoutManagerDelega
                                     cells: cells, isHeader: isHeader, columns: columns)
         case .tableDelimiter:
             return TableDelimiterFragment(textElement: textElement, range: elementRange, theme: theme)
+        case .quote:
+            return QuoteBarFragment(textElement: textElement, range: elementRange, theme: theme)
+        case .rule:
+            return RuleFragment(textElement: textElement, range: elementRange, theme: theme)
         }
     }
 }
