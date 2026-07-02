@@ -51,7 +51,13 @@ public final class NoietsTextView: NSTextView {
 
     // MARK: Vim routing
 
+    /// The wiki-link completion popup gets first look at navigation keys.
+    public weak var completionInterceptor: WikiLinkAutocomplete?
+
     public override func keyDown(with event: NSEvent) {
+        if let completionInterceptor, completionInterceptor.handleKeyDown(event) {
+            return
+        }
         if let vim, vim.handleKey(VimKey(event: event)) {
             return // consumed by the modal engine
         }

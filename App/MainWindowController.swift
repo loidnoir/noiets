@@ -13,8 +13,10 @@ final class MainWindowController: NSWindowController {
     private let editorVC: EditorViewController
     private let searchVC: SearchViewController
     private let trashVC: TrashViewController
+    private let inspectorVC: InspectorViewController
     private let hostVC = ContentHostController()
     private var sidebarItem: NSSplitViewItem?
+    private var inspectorItem: NSSplitViewItem?
 
     init(session: VaultSession) {
         self.session = session
@@ -22,6 +24,7 @@ final class MainWindowController: NSWindowController {
         self.editorVC = EditorViewController(session: session)
         self.searchVC = SearchViewController(session: session)
         self.trashVC = TrashViewController(session: session)
+        self.inspectorVC = InspectorViewController(session: session)
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1120, height: 760),
@@ -50,8 +53,17 @@ final class MainWindowController: NSWindowController {
         let contentItem = NSSplitViewItem(viewController: hostVC)
         contentItem.minimumThickness = 420
 
+        let inspector = NSSplitViewItem(viewController: inspectorVC)
+        inspector.minimumThickness = 210
+        inspector.maximumThickness = 320
+        inspector.canCollapse = true
+        inspector.holdingPriority = NSLayoutConstraint.Priority(262)
+        inspector.isCollapsed = true
+        inspectorItem = inspector
+
         splitVC.addSplitViewItem(sidebar)
         splitVC.addSplitViewItem(contentItem)
+        splitVC.addSplitViewItem(inspector)
         splitVC.splitView.dividerStyle = .thin
         window.contentViewController = splitVC
         hostVC.show(editorVC)
@@ -65,6 +77,31 @@ final class MainWindowController: NSWindowController {
         }
         session.onIndexChanged = { [weak self] in
             self?.searchVC.indexChanged()
+            self?.inspectorVC.indexChanged()
+        }
+
+        // Wiki-links, tags, inspector navigation.
+        editorVC.editor.onOpenWikiLink = { [weak self] target in
+            self?.openWikiLink(target)
+        }
+        editorVC.editor.onOpenTag = { [weak self] tag in
+            self?.showTag(tag)
+        }
+        editorVC.editor.wikiCompletionProvider = { [weak self] query in
+            guard let index = self?.session.index else { return [] }
+            let rows = (try? index.quickOpen(query, limit: 8)) ?? []
+            return rows.map(\.title)
+        }
+        editorVC.onEdited = { [weak self] text in
+            self?.inspectorVC.noteEdited(text: text)
+        }
+        inspectorVC.onJumpToHeading = { [weak self] range in
+            self?.editorVC.jump(to: range)
+        }
+        inspectorVC.onOpenNote = { [weak self] url, range in
+            self?.open(noteAt: url)
+            self?.sidebarVC.select(url: url, notify: false)
+            if let range { self?.editorVC.jump(to: range) }
         }
 
         if let first = session.firstNote() {
@@ -73,6 +110,10 @@ final class MainWindowController: NSWindowController {
         }
 
         session.startIndexing()
+
+        if ProcessInfo.processInfo.environment["NOIETS_SHOW_INSPECTOR"] == "1" {
+            inspector.isCollapsed = false
+        }
     }
 
     @available(*, unavailable)
@@ -90,6 +131,27 @@ final class MainWindowController: NSWindowController {
         editorVC.display(text: text)
         window?.title = url.deletingPathExtension().lastPathComponent
         editorVC.focusEditor()
+        inspectorVC.update(noteURL: url, text: text)
+    }
+
+    /// [[target]] navigation with Obsidian-style create-on-missing.
+    func openWikiLink(_ target: String) {
+        guard let index = session.index else { return }
+        if let existing = try? index.note(matchingLinkTarget: target) {
+            let url = session.url(forRelPath: existing.relPath)
+            open(noteAt: url)
+            sidebarVC.select(url: url, notify: false)
+            return
+        }
+        // Create in the vault root, named after the link target.
+        guard let url = try? NoteIO.createNote(
+            in: session.vault.rootURL,
+            baseName: target,
+            contents: "# \(target)\n\n"
+        ) else { return }
+        session.rescan()
+        sidebarVC.select(url: url, notify: false)
+        open(noteAt: url)
     }
 
     private func showFixed(_ fixed: SidebarViewController.Fixed) {
@@ -151,6 +213,11 @@ final class MainWindowController: NSWindowController {
     @objc func toggleSidebarPane(_ sender: Any?) {
         guard let sidebarItem else { return }
         sidebarItem.animator().isCollapsed.toggle()
+    }
+
+    @objc func toggleRightPanel(_ sender: Any?) {
+        guard let inspectorItem else { return }
+        inspectorItem.animator().isCollapsed.toggle()
     }
 
     @objc func searchVault(_ sender: Any?) {

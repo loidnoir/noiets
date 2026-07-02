@@ -66,6 +66,9 @@ enum SelfTest {
             }
             if let wc = window.windowController as? MainWindowController {
                 out["palette"] = paletteChecks(wc)
+                if let editorView = findEditorView(in: window), let session = session {
+                    out["wiki"] = wikiChecks(wc, editorView, vault: session.vault.rootURL)
+                }
             }
             if let outline = outlines.first {
                 out["sidebarRows"] = outline.numberOfRows
@@ -202,6 +205,42 @@ enum SelfTest {
         result["quickOpenVisible"] = PalettePanel.shared.isVisible
         PalettePanel.shared.dismiss()
         result["dismissed"] = !PalettePanel.shared.isVisible
+        return result
+    }
+
+    /// Wiki-link routing (create-on-missing) + [[ autocompletion end to end.
+    private static func wikiChecks(
+        _ wc: MainWindowController,
+        _ editorView: MarkdownEditorView,
+        vault: URL
+    ) -> [String: Any] {
+        var result: [String: Any] = [:]
+        let tv = editorView.textView
+
+        // 1. Clicking an unresolved [[Second Note]] creates + opens the note.
+        _ = editorView.textView(tv, clickedOnLink: "noiets://open/Second%20Note" as Any, at: 0)
+        let created = vault.appendingPathComponent("Second Note.md")
+        result["createOnMissing"] = FileManager.default.fileExists(atPath: created.path)
+        result["openedTitle"] = wc.window?.title ?? ""
+
+        // 2. Typing "[[We" pops completion; Return inserts "[[Welcome to Noiets]]".
+        editorView.onTextChange = nil // keep the scratch edit off disk
+        editorView.load(text: "start ")
+        tv.setSelectedRange(NSRange(location: 6, length: 0))
+        func key(_ ch: String, keyCode: UInt16 = 0) {
+            guard let event = NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: [],
+                timestamp: 0, windowNumber: tv.window?.windowNumber ?? 0, context: nil,
+                characters: ch, charactersIgnoringModifiers: ch,
+                isARepeat: false, keyCode: keyCode
+            ) else { return }
+            tv.keyDown(with: event)
+        }
+        key("i") // vim → insert mode
+        tv.insertText("[[We", replacementRange: tv.selectedRange())
+        result["completionVisible"] = editorView.isWikiCompletionActive
+        key("\r", keyCode: 36)
+        result["afterCompletion"] = tv.string
         return result
     }
 }

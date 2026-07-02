@@ -9,6 +9,9 @@ final class EditorViewController: NSViewController {
     let editor = MarkdownEditorView()
     private let emptyLabel = NSTextField(labelWithString: "No note selected")
 
+    /// Fired (with the current text) on every edit — inspector outline refresh.
+    var onEdited: ((String) -> Void)?
+
     init(session: VaultSession) {
         self.session = session
         super.init(nibName: nil, bundle: nil)
@@ -42,7 +45,19 @@ final class EditorViewController: NSViewController {
             guard let self else { return }
             let editorView = self.editor
             self.session.noteEdited { editorView.string }
+            self.onEdited?(editorView.string)
         }
+    }
+
+    /// Selects + reveals a source range (outline/backlink navigation).
+    func jump(to range: NSRange) {
+        let length = (editor.string as NSString).length
+        guard range.location <= length else { return }
+        let clamped = NSRange(location: range.location,
+                              length: min(range.length, length - range.location))
+        editor.textView.setSelectedRange(clamped)
+        editor.textView.scrollRangeToVisible(clamped)
+        focusEditor()
     }
 
     func display(text: String) {

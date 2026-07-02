@@ -16,6 +16,18 @@ public final class MarkdownEditorView: NSView {
     /// Fired on every text change (typing, paste, vim edit). Used for autosave.
     public var onTextChange: (() -> Void)?
 
+    /// Wiki-link navigation: [[target]] clicked (target string, un-encoded).
+    public var onOpenWikiLink: ((String) -> Void)?
+    /// #tag clicked.
+    public var onOpenTag: ((String) -> Void)?
+    /// Titles/stems for [[ autocompletion, filtered by the partial query.
+    public var wikiCompletionProvider: ((String) -> [String])?
+
+    let autocomplete = WikiLinkAutocomplete()
+
+    /// Test/diagnostic hook: is the [[ completion popup showing?
+    public var isWikiCompletionActive: Bool { autocomplete.isActive }
+
     public init(theme: EditorTheme = .standard()) {
         self.theme = theme
         self.textView = NoietsTextView.makeTextKit2(theme: theme)
@@ -65,6 +77,7 @@ public final class MarkdownEditorView: NSView {
     private func setupVim() {
         vim.target = textView
         textView.vim = vim
+        textView.completionInterceptor = autocomplete
 
         modePill.font = .monospacedSystemFont(ofSize: 10, weight: .semibold)
         modePill.textColor = theme.mutedColor
@@ -105,6 +118,7 @@ public final class MarkdownEditorView: NSView {
 
     /// Replaces the buffer with a freshly loaded note (resets undo history).
     public func load(text: String) {
+        autocomplete.hide()
         vim.reset()
         textView.string = text // triggers didProcessEditing → full style pass
         textView.undoManager?.removeAllActions()
@@ -124,11 +138,99 @@ public final class MarkdownEditorView: NSView {
 extension MarkdownEditorView: NSTextViewDelegate {
     public func textDidChange(_ notification: Notification) {
         onTextChange?()
+        refreshWikiAutocomplete()
+    }
+
+    // MARK: Link routing
+
+    public func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
+        guard let urlString = (link as? String) ?? (link as? URL)?.absoluteString,
+              let url = URL(string: urlString) else { return false }
+        if url.scheme == "noiets" {
+            let value = url.path.dropFirst().removingPercentEncoding ?? String(url.path.dropFirst())
+            switch url.host {
+            case "open":
+                onOpenWikiLink?(value)
+            case "tag":
+                onOpenTag?(value)
+            default:
+                break
+            }
+            return true
+        }
+        return false // http(s) etc → system default handling
+    }
+
+    // MARK: [[ autocompletion
+
+    /// Detects an unclosed "[[query" immediately before the caret.
+    private func wikiQueryContext() -> (query: String, queryRange: NSRange)? {
+        let text = textView.string as NSString
+        let caret = textView.selectedRange().location
+        guard caret <= text.length, textView.selectedRange().length == 0 else { return nil }
+        let lineStart = text.lineRange(for: NSRange(location: min(caret, max(0, text.length - 1)), length: 0)).location
+        var i = caret - 1
+        while i >= lineStart {
+            let c = text.character(at: i)
+            if c == unichar(UInt8(ascii: "]")) { return nil }
+            if c == unichar(UInt8(ascii: "[")) {
+                guard i > lineStart, text.character(at: i - 1) == unichar(UInt8(ascii: "[")) else { return nil }
+                let queryStart = i + 1
+                let query = text.substring(with: NSRange(location: queryStart, length: caret - queryStart))
+                if query.contains("|") || query.contains("#") { return nil }
+                return (query, NSRange(location: queryStart, length: caret - queryStart))
+            }
+            i -= 1
+        }
+        return nil
+    }
+
+    private func refreshWikiAutocomplete() {
+        guard let window = textView.window,
+              let provider = wikiCompletionProvider,
+              let context = wikiQueryContext() else {
+            autocomplete.hide()
+            return
+        }
+        let suggestions = provider(context.query)
+        guard !suggestions.isEmpty else {
+            autocomplete.hide()
+            return
+        }
+        let caretRect = textView.firstRect(forCharacterRange: textView.selectedRange(), actualRange: nil)
+        autocomplete.show(suggestions: suggestions, at: caretRect, parent: window) { [weak self] picked in
+            self?.insertWikiCompletion(picked)
+        }
+    }
+
+    private func insertWikiCompletion(_ target: String) {
+        guard let context = wikiQueryContext() else { return }
+        let text = textView.string as NSString
+        // Replace the partial query (and consume an existing "]]" right after
+        // the caret if the tokenizer auto-close ever adds one).
+        var replaceRange = context.queryRange
+        var insert = target
+        let after = replaceRange.location + replaceRange.length
+        if after + 2 <= text.length, text.substring(with: NSRange(location: after, length: 2)) == "]]" {
+            // keep the existing closer
+        } else {
+            insert += "]]"
+        }
+        if textView.shouldChangeText(in: replaceRange, replacementString: insert) {
+            textView.textStorage?.replaceCharacters(in: replaceRange, with: insert)
+            textView.didChangeText()
+            let newCaret = replaceRange.location + (insert as NSString).length
+            textView.setSelectedRange(NSRange(location: newCaret, length: 0))
+        }
+        autocomplete.hide()
     }
 
     // MARK: Live Preview — active paragraph tracking
 
     public func textViewDidChangeSelection(_ notification: Notification) {
+        if autocomplete.isActive, wikiQueryContext() == nil {
+            autocomplete.hide()
+        }
         guard let storage = textView.textStorage else { return }
         let text = textView.string as NSString
         let selection = textView.selectedRange()

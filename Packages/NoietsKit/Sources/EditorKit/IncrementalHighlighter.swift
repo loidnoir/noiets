@@ -164,16 +164,25 @@ public final class IncrementalHighlighter: NSObject {
                 && activeParagraphRange.location >= line.range.location
                 && activeParagraphRange.location <= line.range.location + line.range.length)
         if !isActive {
-            hideMarkup(tokens: tokens, storage: storage)
+            hideMarkup(tokens: tokens, storage: storage, text: text)
         }
     }
 
-    /// Applies the collapsed rendering to every token that hides in preview.
-    private func hideMarkup(tokens: [Token], storage: NSTextStorage) {
+    /// Applies the collapsed rendering to every token that hides in preview,
+    /// and makes links/tags clickable (inactive lines only — the active line
+    /// is raw source where clicks should place the caret).
+    private func hideMarkup(tokens: [Token], storage: NSTextStorage, text: NSString) {
         func hide(_ range: NSRange) {
             storage.addAttribute(.font, value: Self.collapsedFont, range: range)
             storage.addAttribute(.foregroundColor, value: NSColor.clear, range: range)
             storage.addAttribute(.noietsHidden, value: true, range: range)
+        }
+        func link(_ range: NSRange, _ url: String) {
+            storage.addAttribute(.link, value: url, range: range)
+            storage.addAttribute(.cursor, value: NSCursor.pointingHand, range: range)
+        }
+        func noiets(_ kind: String, _ value: String) -> String {
+            "noiets://\(kind)/\(value.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? value)"
         }
 
         for (index, token) in tokens.enumerated() {
@@ -183,15 +192,31 @@ public final class IncrementalHighlighter: NSObject {
             }
             switch token.kind {
             case .linkURL:
-                // Hide the URL of [text](url) — but keep bare autolinks visible.
                 if index > 0, tokens[index - 1].kind == .linkBracket {
+                    // The URL of [text](url): hidden, and the text becomes the link.
                     hide(token.range)
+                } else {
+                    // Bare autolink: clickable as itself.
+                    link(token.range, text.substring(with: token.range))
+                }
+            case .linkText:
+                // Find this link's URL (two tokens ahead: text, ](, url).
+                if index + 2 < tokens.count, tokens[index + 2].kind == .linkURL {
+                    link(token.range, text.substring(with: tokens[index + 2].range))
                 }
             case .wikiLinkTarget:
-                // [[target|alias]] shows only the alias.
                 if index + 2 < tokens.count, tokens[index + 2].kind == .wikiLinkAlias {
-                    hide(token.range)
+                    hide(token.range) // aliased: only the alias shows…
+                } else {
+                    link(token.range, noiets("open", text.substring(with: token.range)))
                 }
+            case .wikiLinkAlias:
+                // …and the alias navigates to the target (two tokens back).
+                if index >= 2, tokens[index - 2].kind == .wikiLinkTarget {
+                    link(token.range, noiets("open", text.substring(with: tokens[index - 2].range)))
+                }
+            case .tagName:
+                link(token.range, noiets("tag", text.substring(with: token.range)))
             default:
                 break
             }
