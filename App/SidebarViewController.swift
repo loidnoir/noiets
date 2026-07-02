@@ -9,6 +9,7 @@ final class SidebarViewController: NSViewController {
     private let session: VaultSession
 
     var onSelectNote: ((URL) -> Void)?
+    var onSelectFixed: ((Fixed) -> Void)?
     var onCurrentNoteRemoved: (() -> Void)?
 
     private let scrollView = NSScrollView()
@@ -280,9 +281,19 @@ extension SidebarViewController: NSOutlineViewDelegate {
         guard let item = item as? Item else { return false }
         switch item.kind {
         case .separator: return false
-        case .fixed: return false // wired up in M4 (search, recent, trash views)
-        case .node: return true
+        case .fixed, .node: return true
         }
+    }
+
+    /// Programmatic selection of a fixed row (e.g. ⇧⌘F selects Search).
+    func selectFixed(_ fixed: Fixed) {
+        guard let item = rootItems.first(where: {
+            if case .fixed(let f) = $0.kind { return f == fixed }
+            return false
+        }) else { return }
+        let row = outlineView.row(forItem: item)
+        guard row >= 0 else { return }
+        outlineView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
     }
 
     func outlineView(_ outlineView: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat {
@@ -292,10 +303,15 @@ extension SidebarViewController: NSOutlineViewDelegate {
 
     func outlineViewSelectionDidChange(_ notification: Notification) {
         guard !suppressSelectionCallback,
-              let item = outlineView.item(atRow: outlineView.selectedRow) as? Item,
-              let node = item.fileNode,
-              !node.isFolder else { return }
-        onSelectNote?(node.url)
+              let item = outlineView.item(atRow: outlineView.selectedRow) as? Item else { return }
+        switch item.kind {
+        case .fixed(let fixed):
+            onSelectFixed?(fixed)
+        case .node(let node) where !node.isFolder:
+            onSelectNote?(node.url)
+        default:
+            break
+        }
     }
 
     func outlineViewItemDidExpand(_ notification: Notification) {

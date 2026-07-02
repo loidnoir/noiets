@@ -1,21 +1,27 @@
 import AppKit
+import IndexKit
 import VaultStore
 
-/// The single main window: two-pane split (sidebar | editor), toggleable
-/// right panel arrives in M5. Owns note-opening and the first-responder
-/// actions behind the File/View menus.
+/// The single main window: two-pane split (sidebar | content host). The host
+/// swaps between the editor and the Search/Recent/Trash views; ⌘O/⌘P overlay
+/// panels ride on top. Owns note-routing and the first-responder menu actions.
 @MainActor
 final class MainWindowController: NSWindowController {
     let session: VaultSession
     private let splitVC = NSSplitViewController()
     private let sidebarVC: SidebarViewController
     private let editorVC: EditorViewController
+    private let searchVC: SearchViewController
+    private let trashVC: TrashViewController
+    private let hostVC = ContentHostController()
     private var sidebarItem: NSSplitViewItem?
 
     init(session: VaultSession) {
         self.session = session
         self.sidebarVC = SidebarViewController(session: session)
         self.editorVC = EditorViewController(session: session)
+        self.searchVC = SearchViewController(session: session)
+        self.trashVC = TrashViewController(session: session)
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1120, height: 760),
@@ -41,27 +47,38 @@ final class MainWindowController: NSWindowController {
         sidebar.holdingPriority = NSLayoutConstraint.Priority(261)
         sidebarItem = sidebar
 
-        let editorItem = NSSplitViewItem(viewController: editorVC)
-        editorItem.minimumThickness = 420
+        let contentItem = NSSplitViewItem(viewController: hostVC)
+        contentItem.minimumThickness = 420
 
         splitVC.addSplitViewItem(sidebar)
-        splitVC.addSplitViewItem(editorItem)
+        splitVC.addSplitViewItem(contentItem)
         splitVC.splitView.dividerStyle = .thin
         window.contentViewController = splitVC
+        hostVC.show(editorVC)
 
         sidebarVC.onSelectNote = { [weak self] url in self?.open(noteAt: url) }
+        sidebarVC.onSelectFixed = { [weak self] fixed in self?.showFixed(fixed) }
         sidebarVC.onCurrentNoteRemoved = { [weak self] in self?.showEmpty() }
+        searchVC.onOpenNote = { [weak self] url in
+            self?.open(noteAt: url)
+            self?.sidebarVC.select(url: url, notify: false)
+        }
+        session.onIndexChanged = { [weak self] in
+            self?.searchVC.indexChanged()
+        }
 
         if let first = session.firstNote() {
             open(noteAt: first)
             sidebarVC.select(url: first, notify: false)
         }
+
+        session.startIndexing()
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
-    // MARK: Note routing
+    // MARK: Routing
 
     func open(noteAt url: URL) {
         guard let text = session.readNote(at: url) else {
@@ -69,13 +86,38 @@ final class MainWindowController: NSWindowController {
             return
         }
         session.noteOpened(url)
+        hostVC.show(editorVC)
         editorVC.display(text: text)
         window?.title = url.deletingPathExtension().lastPathComponent
         editorVC.focusEditor()
     }
 
+    private func showFixed(_ fixed: SidebarViewController.Fixed) {
+        session.flushPendingSave()
+        switch fixed {
+        case .search:
+            searchVC.show(mode: .search)
+            hostVC.show(searchVC)
+            searchVC.focusSearch()
+        case .recent:
+            searchVC.show(mode: .recent)
+            hostVC.show(searchVC)
+        case .trash:
+            trashVC.reload()
+            hostVC.show(trashVC)
+        }
+        window?.title = session.vault.name
+    }
+
+    func showTag(_ name: String) {
+        sidebarVC.selectFixed(.search)
+        searchVC.show(mode: .tag(name))
+        hostVC.show(searchVC)
+    }
+
     private func showEmpty() {
         editorVC.displayEmpty()
+        hostVC.show(editorVC)
         window?.title = session.vault.name
     }
 
@@ -110,6 +152,69 @@ final class MainWindowController: NSWindowController {
         guard let sidebarItem else { return }
         sidebarItem.animator().isCollapsed.toggle()
     }
+
+    @objc func searchVault(_ sender: Any?) {
+        sidebarVC.selectFixed(.search) // triggers showFixed(.search)
+    }
+
+    // MARK: Overlays
+
+    @objc func quickOpen(_ sender: Any?) {
+        guard let window, let index = session.index else { return }
+        PalettePanel.shared.present(over: window, placeholder: "Open note…") { [weak self] query in
+            guard let self else { return [] }
+            let rows = (try? index.quickOpen(query)) ?? []
+            return rows.map { row in
+                PalettePanel.Item(symbol: "doc.text", title: row.title, subtitle: row.relPath) {
+                    let url = self.session.url(forRelPath: row.relPath)
+                    self.open(noteAt: url)
+                    self.sidebarVC.select(url: url, notify: false)
+                }
+            }
+        }
+    }
+
+    @objc func commandPalette(_ sender: Any?) {
+        guard let window else { return }
+        PalettePanel.shared.present(over: window, placeholder: "Type a command or # for tags…") { [weak self] query in
+            self?.paletteItems(for: query) ?? []
+        }
+    }
+
+    private func paletteItems(for query: String) -> [PalettePanel.Item] {
+        let q = query.lowercased().trimmingCharacters(in: .whitespaces)
+
+        // Tag browsing: "#" prefix lists tags.
+        if q.hasPrefix("#") {
+            let filter = String(q.dropFirst())
+            let tags = (try? session.index?.allTags()) ?? []
+            return tags
+                .filter { filter.isEmpty || $0.name.contains(filter) }
+                .map { tag in
+                    PalettePanel.Item(symbol: "number", title: "#\(tag.name)",
+                                      subtitle: "\(tag.count) note\(tag.count == 1 ? "" : "s")") { [weak self] in
+                        self?.showTag(tag.name)
+                    }
+                }
+        }
+
+        let commands: [(String, String, @MainActor () -> Void)] = [
+            ("New Note", "square.and.pencil", { [weak self] in self?.newNote(nil) }),
+            ("New Folder", "folder.badge.plus", { [weak self] in self?.newFolder(nil) }),
+            ("Search Vault", "magnifyingglass", { [weak self] in self?.searchVault(nil) }),
+            ("Recent Notes", "clock", { [weak self] in self?.sidebarVC.selectFixed(.recent) }),
+            ("Open Trash", "trash", { [weak self] in self?.sidebarVC.selectFixed(.trash) }),
+            ("Toggle Sidebar", "sidebar.left", { [weak self] in self?.toggleSidebarPane(nil) }),
+            ("Reveal in Finder", "finder", { [weak self] in self?.revealInFinder(nil) }),
+            ("Move Note to Trash", "trash", { [weak self] in self?.moveNoteToTrash(nil) }),
+            ("Save Note", "internaldrive", { [weak self] in self?.saveNote(nil) }),
+        ]
+        return commands
+            .filter { q.isEmpty || $0.0.lowercased().contains(q) }
+            .map { cmd in
+                PalettePanel.Item(symbol: cmd.1, title: cmd.0, subtitle: nil, action: cmd.2)
+            }
+    }
 }
 
 // MARK: - Menu validation
@@ -125,5 +230,33 @@ extension MainWindowController: NSMenuItemValidation {
             return session.currentNoteURL != nil
         }
         return true
+    }
+}
+
+/// Hosts one child view controller at a time in the second split pane.
+@MainActor
+final class ContentHostController: NSViewController {
+    private var current: NSViewController?
+
+    override func loadView() {
+        view = NSView()
+    }
+
+    func show(_ vc: NSViewController) {
+        guard vc !== current else { return }
+        if let current {
+            current.view.removeFromSuperview()
+            current.removeFromParent()
+        }
+        addChild(vc)
+        vc.view.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(vc.view)
+        NSLayoutConstraint.activate([
+            vc.view.topAnchor.constraint(equalTo: view.topAnchor),
+            vc.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            vc.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            vc.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+        ])
+        current = vc
     }
 }

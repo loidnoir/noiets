@@ -1,4 +1,5 @@
 import AppKit
+import IndexKit
 import VaultStore
 import os
 
@@ -12,6 +13,14 @@ final class VaultSession {
     let vault: Vault
     private(set) var tree: FileNode
     var onTreeChange: (() -> Void)?
+    /// Fired after any index batch lands (search/backlink UIs refresh).
+    var onIndexChanged: (() -> Void)?
+
+    // Derived, rebuildable index (nil only if SQLite setup failed).
+    private(set) var index: NoteIndex?
+    private var reindexer: Reindexer?
+    private var watcher: FSEventsWatcher?
+    private var treeRescanWork: DispatchWorkItem?
 
     private(set) var currentNoteURL: URL?
     private var pendingText: (@MainActor () -> String)?
@@ -20,6 +29,42 @@ final class VaultSession {
     init(vault: Vault) {
         self.vault = vault
         self.tree = VaultScanner.scan(vault)
+    }
+
+    /// Boots the index + file watching. Called once the UI is up.
+    func startIndexing() {
+        do {
+            let index = try NoteIndex(vault: vault)
+            self.index = index
+            let reindexer = Reindexer(index: index) { [weak self] in
+                self?.onIndexChanged?()
+            }
+            self.reindexer = reindexer
+
+            let watcher = FSEventsWatcher(root: vault.rootURL) { [weak self] paths in
+                Task { @MainActor [weak self] in
+                    self?.fileSystemChanged(paths: paths)
+                }
+            }
+            watcher.start()
+            self.watcher = watcher
+
+            Task { await reindexer.reconcile() }
+        } catch {
+            Self.log.error("Index setup failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func fileSystemChanged(paths: [String]) {
+        // Keep the sidebar tree fresh (Finder renames/moves), debounced.
+        treeRescanWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.rescan() }
+        treeRescanWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
+
+        if let reindexer {
+            Task { await reindexer.pathsChanged(paths) }
+        }
     }
 
     // MARK: Tree
@@ -74,10 +119,17 @@ final class VaultSession {
         pendingText = nil
         do {
             try NoteIO.write(provider(), to: url)
+            if let reindexer {
+                Task { await reindexer.pathsChanged([url.path]) } // fresh index now
+            }
         } catch {
             Self.log.error("Save failed for \(url.path): \(error.localizedDescription)")
             NSSound.beep()
         }
+    }
+
+    func url(forRelPath relPath: String) -> URL {
+        vault.rootURL.appendingPathComponent(relPath)
     }
 
     // MARK: Mutations

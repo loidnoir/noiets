@@ -13,15 +13,22 @@ let package = Package(
         .library(name: "IndexKit", targets: ["IndexKit"]),
         .library(name: "EditorKit", targets: ["EditorKit"]),
     ],
+    dependencies: [
+        .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.0.0"),
+    ],
     targets: [
         .target(name: "SharedModel"),
         .target(name: "VaultStore", dependencies: ["SharedModel"]),
         .target(name: "MarkdownKit", dependencies: ["SharedModel"]),
         .target(name: "VimKit", dependencies: ["SharedModel"]),
         .target(name: "RenderKit", dependencies: ["SharedModel"]),
-        .target(name: "IndexKit", dependencies: ["SharedModel", "VaultStore", "MarkdownKit"]),
+        .target(name: "IndexKit", dependencies: [
+            "SharedModel", "VaultStore", "MarkdownKit",
+            .product(name: "GRDB", package: "GRDB.swift"),
+        ]),
         .target(name: "EditorKit", dependencies: ["SharedModel", "MarkdownKit", "VimKit", "RenderKit"]),
         .testTarget(name: "MarkdownKitTests", dependencies: ["MarkdownKit"]),
         .testTarget(name: "VimKitTests", dependencies: ["VimKit"]),
+        .testTarget(name: "IndexKitTests", dependencies: ["IndexKit"]),
     ]
 )

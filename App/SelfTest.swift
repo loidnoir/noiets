@@ -9,8 +9,10 @@ import VaultStore
 @MainActor
 enum SelfTest {
     static func armIfRequested(session: @escaping @autoclosure @MainActor () -> VaultSession?) {
-        guard ProcessInfo.processInfo.environment["NOIETS_SELFTEST"] == "1" else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+        let env = ProcessInfo.processInfo.environment
+        guard env["NOIETS_SELFTEST"] == "1" else { return }
+        let delay = Double(env["NOIETS_SELFTEST_DELAY"] ?? "") ?? 1.0
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
             report(session: session())
             exit(0)
         }
@@ -58,6 +60,12 @@ enum SelfTest {
             }
             if let editorView = findEditorView(in: window) {
                 out["vim"] = vimChecks(editorView)
+            }
+            if let session = session {
+                out["index"] = indexChecks(session)
+            }
+            if let wc = window.windowController as? MainWindowController {
+                out["palette"] = paletteChecks(wc)
             }
             if let outline = outlines.first {
                 out["sidebarRows"] = outline.numberOfRows
@@ -172,6 +180,28 @@ enum SelfTest {
         result["searchLandedAt"] = tv.selectedRange().location // 12
 
         editorView.load(text: "restored\n")
+        return result
+    }
+
+    /// Index sanity against the live vault (after startup reconcile).
+    private static func indexChecks(_ session: VaultSession) -> [String: Any] {
+        guard let index = session.index else { return ["error": "no index"] }
+        var result: [String: Any] = [:]
+        result["noteCount"] = (try? index.allNotes().count) ?? -1
+        result["searchVimHits"] = (try? index.searchNotes("vim").count) ?? -1
+        result["quickOpenWel"] = (try? index.quickOpen("wel").map(\.title)) ?? []
+        result["recentCount"] = (try? index.recentNotes().count) ?? -1
+        result["tags"] = (try? index.allTags().map(\.name)) ?? []
+        return result
+    }
+
+    /// Opens and closes the quick-open overlay through the real action.
+    private static func paletteChecks(_ wc: MainWindowController) -> [String: Any] {
+        var result: [String: Any] = [:]
+        wc.quickOpen(nil)
+        result["quickOpenVisible"] = PalettePanel.shared.isVisible
+        PalettePanel.shared.dismiss()
+        result["dismissed"] = !PalettePanel.shared.isVisible
         return result
     }
 }

@@ -50,8 +50,8 @@ final class SidebarCellView: NSTableCellView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
-    static func make(in outlineView: NSOutlineView, title: String, symbol: String?, isFolder: Bool) -> SidebarCellView {
-        let cell = outlineView.makeView(withIdentifier: reuseID, owner: nil) as? SidebarCellView
+    static func make(in tableView: NSTableView, title: String, symbol: String?, isFolder: Bool) -> SidebarCellView {
+        let cell = tableView.makeView(withIdentifier: reuseID, owner: nil) as? SidebarCellView
             ?? SidebarCellView(frame: .zero)
         cell.identifier = reuseID
         cell.configure(title: title, symbol: symbol, isFolder: isFolder)
