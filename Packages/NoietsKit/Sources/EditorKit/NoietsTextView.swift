@@ -14,6 +14,10 @@ public final class NoietsTextView: NSTextView {
     /// The modal engine; keys route through it before AppKit sees them.
     public weak var vim: VimEngine?
 
+    // Sticky visual column for j/k (see moveCaretVisually).
+    var verticalGoalX: CGFloat?
+    var inVerticalMove = false
+
     /// Builds a fully configured TextKit 2 editor view.
     public static func makeTextKit2(theme: EditorTheme) -> NoietsTextView {
         let tv = NoietsTextView(usingTextLayoutManager: true)
@@ -164,10 +168,18 @@ extension NoietsTextView: VimTextTarget {
         return max(1, Int(visibleRect.height / max(lineHeight, 1)))
     }
 
-    /// Native visual-line movement: wraps through soft-wrapped lines and keeps
-    /// AppKit's pixel goal column across consecutive moves — exactly what the
-    /// eye expects on wrapped prose.
+    /// Visual-line movement with a sticky pixel goal column: the caret's x is
+    /// remembered across the whole j/k sequence — shorter lines clamp to
+    /// their end WITHOUT overwriting the memory, so a later longer line
+    /// restores the original position. The goal resets whenever the caret
+    /// moves by any other means (h/l/w, clicks, typing, motions).
     public func moveCaretVisually(lines: Int) {
+        inVerticalMove = true
+        defer { inVerticalMove = false }
+
+        let goal = verticalGoalX ?? caretViewRect()?.minX
+        verticalGoalX = goal
+
         for _ in 0..<abs(lines) {
             if lines > 0 {
                 moveDown(nil)
@@ -175,6 +187,35 @@ extension NoietsTextView: VimTextTarget {
                 moveUp(nil)
             }
         }
+
+        // Land on the destination visual line at the remembered x.
+        if let goal, let lineRect = caretViewRect() {
+            let index = characterIndexForInsertion(at: NSPoint(x: goal, y: lineRect.midY))
+            if index >= 0, index <= (string as NSString).length {
+                setSelectedRange(NSRange(location: index, length: 0))
+            }
+        }
+    }
+
+    /// Every selection change funnels through here — anything that isn't our
+    /// own vertical movement invalidates the sticky column.
+    public override func setSelectedRanges(
+        _ ranges: [NSValue],
+        affinity: NSSelectionAffinity,
+        stillSelecting: Bool
+    ) {
+        if !inVerticalMove {
+            verticalGoalX = nil
+        }
+        super.setSelectedRanges(ranges, affinity: affinity, stillSelecting: stillSelecting)
+    }
+
+    /// Caret rect in view coordinates.
+    private func caretViewRect() -> NSRect? {
+        guard let window else { return nil }
+        let screenRect = firstRect(forCharacterRange: selectedRange(), actualRange: nil)
+        guard screenRect != .zero else { return nil }
+        return convert(window.convertFromScreen(screenRect), from: nil)
     }
 }
 

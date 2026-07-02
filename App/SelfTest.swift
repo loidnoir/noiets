@@ -209,6 +209,20 @@ enum SelfTest {
         key("j")
         result["visualJProgresses"] = tv.selectedRange().location > caretAfterJ
 
+        // Sticky column: long → short → long lines. The column must clamp on
+        // the short line but be REMEMBERED and restored on the next long one.
+        editorView.load(text: "aaaaaaaaaaaaaaaaaaaa\nab\ncccccccccccccccccccc")
+        tv.setSelectedRange(NSRange(location: 15, length: 0)) // col 15, line 1
+        key("j") // short line: clamps near its end
+        let colOnShort = tv.selectedRange().location - 21
+        key("j") // long line again: should restore ≈ col 15
+        let colRestored = tv.selectedRange().location - 24
+        result["stickyClampsOnShort"] = colOnShort <= 2
+        result["stickyRestores"] = abs(colRestored - 15) <= 1
+        key("k")
+        key("k") // back on line 1: still ≈ col 15
+        result["stickyRestoresUpward"] = abs(tv.selectedRange().location - 15) <= 1
+
         // ⌃d half-page scroll through the real key path.
         editorView.load(text: (1...80).map { "line \($0)" }.joined(separator: "\n"))
         guard let ctrlD = NSEvent.keyEvent(
