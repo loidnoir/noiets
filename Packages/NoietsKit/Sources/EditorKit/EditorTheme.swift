@@ -14,6 +14,7 @@ public struct EditorTheme {
     public var accentColor: NSColor     // links, wiki-links, caret
     public var codeColor: NSColor
     public var codeBackground: NSColor
+    public var highlightBackground: NSColor
     public var background: NSColor
 
     public static func standard() -> EditorTheme {
@@ -29,6 +30,8 @@ public struct EditorTheme {
             codeColor: dynamic(light: NSColor(red: 0.72, green: 0.25, blue: 0.35, alpha: 1),
                                dark: NSColor(red: 0.90, green: 0.51, blue: 0.55, alpha: 1)),
             codeBackground: dynamic(light: NSColor(white: 0.955, alpha: 1), dark: NSColor(white: 0.16, alpha: 1)),
+            highlightBackground: dynamic(light: NSColor(red: 1.0, green: 0.95, blue: 0.60, alpha: 1),
+                                         dark: NSColor(red: 0.42, green: 0.37, blue: 0.12, alpha: 1)),
             background: dynamic(light: .white, dark: NSColor(white: 0.115, alpha: 1))
         )
     }
@@ -55,6 +58,14 @@ public struct EditorTheme {
         let p = NSMutableParagraphStyle()
         p.lineSpacing = lineSpacing
         p.paragraphSpacing = paragraphSpacing
+        return p
+    }
+
+    public func headingParagraphStyle(level: Int) -> NSParagraphStyle {
+        let p = NSMutableParagraphStyle()
+        p.lineSpacing = lineSpacing
+        p.paragraphSpacing = 8
+        p.paragraphSpacingBefore = level == 1 ? 18 : (level == 2 ? 14 : 10)
         return p
     }
 

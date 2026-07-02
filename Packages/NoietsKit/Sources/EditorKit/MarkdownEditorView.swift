@@ -7,6 +7,7 @@ public final class MarkdownEditorView: NSView {
     public let theme: EditorTheme
     public let textView: NoietsTextView
     public let scrollView = NSScrollView()
+    public let highlighter: IncrementalHighlighter
 
     /// Fired on every text change (typing, paste, vim edit). Used for autosave.
     public var onTextChange: (() -> Void)?
@@ -14,6 +15,7 @@ public final class MarkdownEditorView: NSView {
     public init(theme: EditorTheme = .standard()) {
         self.theme = theme
         self.textView = NoietsTextView.makeTextKit2(theme: theme)
+        self.highlighter = IncrementalHighlighter(theme: theme)
         super.init(frame: .zero)
         setup()
     }
@@ -38,6 +40,7 @@ public final class MarkdownEditorView: NSView {
         textView.textContainer?.widthTracksTextView = true
         textView.textContainer?.size = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
         textView.delegate = self
+        textView.textStorage?.delegate = highlighter
 
         scrollView.documentView = textView
         scrollView.translatesAutoresizingMaskIntoConstraints = false
@@ -59,8 +62,11 @@ public final class MarkdownEditorView: NSView {
         textView.string = text
         textView.undoManager?.removeAllActions()
         textView.setSelectedRange(NSRange(location: 0, length: 0))
-        scrollView.contentView.scroll(to: .zero)
-        scrollView.reflectScrolledClipView(scrollView.contentView)
+        // Defer past TextKit 2's initial viewport height estimation — an
+        // immediate scroll drifts once the estimate settles.
+        DispatchQueue.main.async { [weak self] in
+            self?.textView.scrollRangeToVisible(NSRange(location: 0, length: 0))
+        }
     }
 
     public func focus() {

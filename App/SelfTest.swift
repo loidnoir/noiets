@@ -40,6 +40,15 @@ enum SelfTest {
                 out["editorFirstLine"] = editor.string.components(separatedBy: "\n").first ?? ""
                 out["editorUsesTextKit2"] = editor.textLayoutManager != nil
                 out["editorHidden"] = editor.isHiddenOrHasHiddenAncestor
+                // Styling proof: font sizes seen across the document. A styled
+                // doc with a heading shows >1 distinct size (base 15 + heading).
+                if let storage = editor.textStorage, storage.length > 0 {
+                    var sizes = Set<CGFloat>()
+                    storage.enumerateAttribute(.font, in: NSRange(location: 0, length: storage.length)) { value, _, _ in
+                        if let font = value as? NSFont { sizes.insert(font.pointSize) }
+                    }
+                    out["fontSizes"] = sizes.sorted().map { Double($0) }
+                }
             } else {
                 out["editorTextLength"] = -1
             }
