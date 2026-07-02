@@ -10,11 +10,17 @@ final class SoftRowView: NSTableRowView {
 
     override func drawSelection(in dirtyRect: NSRect) {
         guard isSelected else { return }
-        let rect = bounds.insetBy(dx: 7, dy: 1.5)
-        let path = NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6)
+        let rect = bounds.insetBy(dx: 10, dy: 2)
+        let path = NSBezierPath(roundedRect: rect, xRadius: 7, yRadius: 7)
         UITheme.sidebarSelection.setFill()
         path.fill()
     }
+}
+
+/// The seamless split view: panes meet with no drawn divider — the color
+/// change itself is the separation (resizing still works on the 1px seam).
+final class SeamlessSplitView: NSSplitView {
+    override var dividerColor: NSColor { .clear }
 }
 
 /// Standard sidebar cell: optional small SF Symbol + 13pt label.
@@ -34,14 +40,14 @@ final class SidebarCellView: NSTableCellView {
 
         stack.orientation = .horizontal
         stack.alignment = .centerY
-        stack.spacing = 6
+        stack.spacing = 8
         stack.addArrangedSubview(icon)
         stack.addArrangedSubview(label)
         stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
-            stack.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -4),
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -8),
             stack.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
         textField = label
@@ -60,10 +66,10 @@ final class SidebarCellView: NSTableCellView {
 
     private func configure(title: String, symbol: String?, isFolder: Bool) {
         label.stringValue = title
-        label.font = .systemFont(ofSize: 13, weight: isFolder ? .semibold : .regular)
+        label.font = .systemFont(ofSize: 13.5, weight: isFolder ? .semibold : .regular)
         label.textColor = UITheme.sidebarPrimaryText
         if let symbol {
-            let config = NSImage.SymbolConfiguration(pointSize: 12, weight: .medium)
+            let config = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium)
             icon.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)?
                 .withSymbolConfiguration(config)
             icon.isHidden = false
@@ -74,26 +80,10 @@ final class SidebarCellView: NSTableCellView {
     }
 }
 
-/// The hairline divider between the fixed items and the folder tree.
+/// Pure whitespace between the fixed items and the folder tree — no line,
+/// just air (Things-style).
 final class SeparatorCellView: NSView {
-    static let reuseID = NSUserInterfaceItemIdentifier("SidebarSeparator")
-
-    private let line = ColorView(color: UITheme.hairline)
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        line.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(line)
-        NSLayoutConstraint.activate([
-            line.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
-            line.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
-            line.centerYAnchor.constraint(equalTo: centerYAnchor),
-            line.heightAnchor.constraint(equalToConstant: 1),
-        ])
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+    static let reuseID = NSUserInterfaceItemIdentifier("SidebarSpacer")
 
     static func make(in outlineView: NSOutlineView) -> SeparatorCellView {
         let cell = outlineView.makeView(withIdentifier: reuseID, owner: nil) as? SeparatorCellView

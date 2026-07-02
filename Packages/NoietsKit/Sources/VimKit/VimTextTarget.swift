@@ -21,4 +21,8 @@ public protocol VimTextTarget: AnyObject {
     func performRedo()
 
     func scrollCaretToVisible()
+
+    /// Approximate number of text lines visible in the viewport (for ⌃d/⌃u
+    /// half-page motions). Headless targets return a constant.
+    func visibleLineCount() -> Int
 }

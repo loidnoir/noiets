@@ -34,8 +34,9 @@ enum MainMenu {
         file.addItem(.separator())
         file.addItem({ let i = NSMenuItem(title: "Reveal in Finder", action: Selector(("revealInFinder:")), keyEquivalent: "r")
                        i.keyEquivalentModifierMask = [.command, .option]; return i }())
-        file.addItem({ let i = NSMenuItem(title: "Move to Trash", action: Selector(("moveNoteToTrash:")), keyEquivalent: "\u{8}")
-                       i.keyEquivalentModifierMask = [.command]; return i }())
+        // Deliberately no key equivalent: deleting a note should be a
+        // considered action (menu or context menu), not a stray ⌘⌫.
+        file.addItem(NSMenuItem(title: "Move to Trash", action: Selector(("moveNoteToTrash:")), keyEquivalent: ""))
         file.addItem(.separator())
         file.addItem({ let i = NSMenuItem(title: "Export as HTML…", action: Selector(("exportHTML:")), keyEquivalent: "e")
                        i.keyEquivalentModifierMask = [.command, .shift]; return i }())

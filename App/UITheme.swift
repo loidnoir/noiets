@@ -4,13 +4,18 @@ import AppKit
 /// EditorTheme. Everything is flat and opaque — no vibrancy, no materials.
 @MainActor
 enum UITheme {
+    // Swapped palette: the sidebar is the darker plane, content the lighter.
     static let sidebarBackground = dynamic(
-        light: NSColor(red: 0.965, green: 0.962, blue: 0.952, alpha: 1),
-        dark: NSColor(white: 0.145, alpha: 1)
+        light: .white,
+        dark: NSColor(white: 0.115, alpha: 1)
     )
     static let sidebarSelection = dynamic(
-        light: NSColor(white: 0.877, alpha: 1),
-        dark: NSColor(white: 0.28, alpha: 1)
+        light: NSColor(white: 0.9, alpha: 1),
+        dark: NSColor(white: 0.24, alpha: 1)
+    )
+    static let modeBarBackground = dynamic(
+        light: NSColor(white: 0.93, alpha: 1),
+        dark: NSColor(white: 0.19, alpha: 1)
     )
     static let sidebarPrimaryText = dynamic(
         light: NSColor(white: 0.22, alpha: 1),

@@ -61,6 +61,8 @@ final class MockTarget: VimTextTarget {
 
     func scrollCaretToVisible() {}
 
+    func visibleLineCount() -> Int { 20 }
+
     var undoDepth: Int { undoStack.count }
     var s: String { buffer as String }
     var caret: Int { selection.location }
@@ -466,6 +468,16 @@ private func type(_ engine: VimEngine, _ target: MockTarget, _ text: String) {
 
 @MainActor
 @Suite struct UndoDotTests {
+    @Test func halfPageScroll() {
+        let doc = (1...40).map { "line \($0)" }.joined(separator: "\n")
+        let (e, t) = makeEngine(doc, caret: 0)
+        _ = e.handleKey(VimKey(characters: "d", hasControl: true))
+        // visibleLineCount 20 → half page = 10 lines down.
+        #expect(t.caret == (doc as NSString).range(of: "line 11").location)
+        _ = e.handleKey(VimKey(characters: "u", hasControl: true))
+        #expect(t.caret == 0)
+    }
+
     @Test func undoRedo() {
         let (e, t) = makeEngine("one two", caret: 0)
         send(e, "dw")

@@ -153,12 +153,26 @@ public final class VimEngine {
         if !isReplaying { sequence.append(key) }
 
         if key.hasControl {
-            if key.characters == "r" {
+            switch key.characters {
+            case "r":
                 target.performRedo()
                 clampCaret()
-                return true
+            case "d", "u":
+                // Half-page scroll, vim-style: caret moves with the view.
+                let half = max(1, target.visibleLineCount() / 2)
+                let lines = key.characters == "d" ? half : -half
+                let origin = isVisual ? visualHead : caret
+                let pos = Motions.vertical(target.text, from: origin, lines: lines,
+                                           goalColumn: currentGoalColumn())
+                if isVisual {
+                    updateVisualSelection(head: pos)
+                } else {
+                    moveCaret(to: pos)
+                }
+            default:
+                break
             }
-            return true // consume other control chords in normal mode
+            return true // consume all control chords in normal mode
         }
 
         if key.isReturn {
@@ -379,6 +393,13 @@ public final class VimEngine {
     private var isVisual: Bool {
         if case .visual = mode { return true }
         return false
+    }
+
+    /// Where the editor should draw the block caret: the visual head while
+    /// selecting, else the insertion point.
+    public var displayCaret: Int {
+        if isVisual { return min(visualHead, maxCaret) }
+        return caret
     }
 
     private func modeVisual() -> VimMode { mode }

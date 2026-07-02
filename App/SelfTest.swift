@@ -186,6 +186,22 @@ enum SelfTest {
         keys("/here\n")
         result["searchLandedAt"] = tv.selectedRange().location // 12
 
+        // Caret shape: block (native caret cleared) in normal, bar in insert.
+        result["normalCaretCleared"] = tv.insertionPointColor.alphaComponent == 0
+        key("i")
+        result["insertCaretVisible"] = tv.insertionPointColor.alphaComponent > 0
+        esc()
+
+        // ⌃d half-page scroll through the real key path.
+        editorView.load(text: (1...80).map { "line \($0)" }.joined(separator: "\n"))
+        guard let ctrlD = NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [.control],
+            timestamp: 0, windowNumber: tv.window?.windowNumber ?? 0, context: nil,
+            characters: "d", charactersIgnoringModifiers: "d", isARepeat: false, keyCode: 2
+        ) else { return result }
+        tv.keyDown(with: ctrlD)
+        result["ctrlDMovedTo"] = tv.selectedRange().location
+
         editorView.load(text: "restored\n")
         return result
     }

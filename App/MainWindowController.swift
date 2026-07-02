@@ -3,6 +3,7 @@ import IndexKit
 import MarkdownKit
 import UniformTypeIdentifiers
 import VaultStore
+import VimKit
 
 /// The single main window: two-pane split (sidebar | content host). The host
 /// swaps between the editor and the Search/Recent/Trash views; ⌘O/⌘P overlay
@@ -44,6 +45,12 @@ final class MainWindowController: NSWindowController {
         window.tabbingMode = .disallowed
 
         super.init(window: window)
+
+        // Seamless panes: no drawn divider, the color edge is the separation.
+        let seamless = SeamlessSplitView()
+        seamless.isVertical = true
+        seamless.dividerStyle = .thin
+        splitVC.splitView = seamless
 
         let sidebar = NSSplitViewItem(viewController: sidebarVC)
         sidebar.minimumThickness = 190
@@ -97,6 +104,14 @@ final class MainWindowController: NSWindowController {
         editorVC.onEdited = { [weak self] text in
             self?.inspectorVC.noteEdited(text: text)
         }
+        editorVC.editor.onVimModeChange = { [weak self] mode in
+            self?.updateVimBar(mode: mode)
+        }
+        editorVC.editor.onVimStatus = { [weak self] status in
+            self?.vimStatusSuffix = status
+            self?.updateVimBar(mode: nil)
+        }
+        updateVimBar(mode: .normal)
         inspectorVC.onJumpToHeading = { [weak self] range in
             self?.editorVC.jump(to: range)
         }
@@ -207,6 +222,18 @@ final class MainWindowController: NSWindowController {
         editorVC.displayEmpty()
         hostVC.show(editorVC)
         window?.title = session.vault.name
+    }
+
+    // MARK: Vim mode bar (lives in the sidebar)
+
+    private var vimStatusSuffix = ""
+
+    private func updateVimBar(mode: VimMode?) {
+        let current = mode ?? editorVC.editor.vim.mode
+        let text = vimStatusSuffix.isEmpty
+            ? current.label
+            : "\(current.label)  \(vimStatusSuffix)"
+        sidebarVC.setVimStatus(text)
     }
 
     // MARK: Menu actions (first responder)

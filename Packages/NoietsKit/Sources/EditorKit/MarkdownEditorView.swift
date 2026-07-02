@@ -12,12 +12,19 @@ public final class MarkdownEditorView: NSView {
     public private(set) var layoutController: LivePreviewLayoutController?
     public let vim = VimEngine()
 
+    /// Forwarded vim callbacks (the engine's own slots are used internally
+    /// for caret shape management).
+    public var onVimModeChange: ((VimMode) -> Void)?
+    public var onVimStatus: ((String) -> Void)?
+
     /// Root for resolving relative image paths (the vault folder).
     public var resourceRoot: URL? {
         didSet { layoutController?.imageProvider.rootURL = resourceRoot }
     }
 
-    private let modePill = NSTextField(labelWithString: "")
+    /// Block caret drawn in normal/visual mode (insert uses the native
+    /// blinking bar).
+    private let blockCaret = CaretBlockView()
 
     /// Fired on every text change (typing, paste, vim edit). Used for autosave.
     public var onTextChange: (() -> Void)?
@@ -93,37 +100,54 @@ public final class MarkdownEditorView: NSView {
         textView.vim = vim
         textView.completionInterceptor = autocomplete
 
-        modePill.font = .monospacedSystemFont(ofSize: 10, weight: .semibold)
-        modePill.textColor = theme.mutedColor
-        modePill.alignment = .center
-        modePill.wantsLayer = true
-        modePill.layer?.cornerRadius = 4
-        modePill.layer?.backgroundColor = theme.codeBackground.cgColor
-        modePill.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(modePill)
-        NSLayoutConstraint.activate([
-            modePill.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
-            modePill.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -10),
-            modePill.widthAnchor.constraint(greaterThanOrEqualToConstant: 64),
-            modePill.heightAnchor.constraint(equalToConstant: 18),
-        ])
+        blockCaret.color = theme.accentColor.withAlphaComponent(0.38)
+        blockCaret.wantsLayer = true
+        blockCaret.layer?.cornerRadius = 1.5
+        blockCaret.isHidden = true
+        textView.addSubview(blockCaret) // scrolls with the text
 
         vim.onModeChange = { [weak self] mode in
-            self?.refreshPill(mode: mode, status: nil)
+            self?.refreshCaretShape()
+            self?.onVimModeChange?(mode)
         }
         vim.onStatus = { [weak self] status in
-            self?.refreshPill(mode: nil, status: status)
+            self?.onVimStatus?(status)
         }
-        refreshPill(mode: vim.mode, status: "")
+        refreshCaretShape()
     }
 
-    private var lastStatus = ""
+    // MARK: Caret shape (block in normal/visual, blinking bar in insert)
 
-    private func refreshPill(mode: VimMode?, status: String?) {
-        if let status { lastStatus = status }
-        let m = mode ?? vim.mode
-        let text = lastStatus.isEmpty ? m.label : "\(m.label)  \(lastStatus)"
-        modePill.stringValue = "  \(text)  "
+    func refreshCaretShape() {
+        if vim.mode == .insert {
+            blockCaret.isHidden = true
+            textView.insertionPointColor = theme.accentColor // native blinking bar
+            return
+        }
+        textView.insertionPointColor = .clear
+        let location = vim.displayCaret
+        guard let rect = caretGlyphRect(at: location) else {
+            blockCaret.isHidden = true
+            return
+        }
+        blockCaret.frame = rect
+        blockCaret.isHidden = false
+    }
+
+    /// Rect of the character cell under the caret, in text-view coordinates.
+    private func caretGlyphRect(at location: Int) -> NSRect? {
+        guard let window = textView.window else { return nil }
+        let length = (textView.string as NSString).length
+        let clamped = min(max(location, 0), length)
+        let range = NSRange(location: clamped, length: clamped < length ? 1 : 0)
+        var screenRect = textView.firstRect(forCharacterRange: range, actualRange: nil)
+        if screenRect == .zero { return nil }
+        let fallbackWidth = theme.baseFontSize * 0.55
+        if screenRect.width < 2 || screenRect.width > theme.baseFontSize * 2.5 {
+            screenRect.size.width = fallbackWidth // newline / EOF / wide glyphs
+        }
+        let windowRect = window.convertFromScreen(screenRect)
+        return textView.convert(windowRect, from: nil)
     }
 
     // MARK: Content
@@ -149,10 +173,32 @@ public final class MarkdownEditorView: NSView {
     }
 }
 
+/// Appearance-aware solid block for the vim caret.
+final class CaretBlockView: NSView {
+    var color: NSColor = .clear {
+        didSet { needsDisplay = true }
+    }
+
+    init() {
+        super.init(frame: .zero)
+        wantsLayer = true
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override var wantsUpdateLayer: Bool { true }
+
+    override func updateLayer() {
+        layer?.backgroundColor = color.cgColor
+    }
+}
+
 extension MarkdownEditorView: NSTextViewDelegate {
     public func textDidChange(_ notification: Notification) {
         onTextChange?()
         refreshWikiAutocomplete()
+        refreshCaretShape()
     }
 
     // MARK: Link routing
@@ -256,6 +302,7 @@ extension MarkdownEditorView: NSTextViewDelegate {
                 length: min(selection.length, max(0, text.length - selection.location))
               ))
         highlighter.updateActiveParagraph(storage, to: paragraph)
+        refreshCaretShape()
     }
 
     // MARK: Live Preview — caret skips collapsed markup

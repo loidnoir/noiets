@@ -142,6 +142,11 @@ extension NoietsTextView: VimTextTarget {
     public func scrollCaretToVisible() {
         scrollRangeToVisible(selectedRange())
     }
+
+    public func visibleLineCount() -> Int {
+        let lineHeight = theme.baseFont.boundingRectForFont.height + theme.lineSpacing
+        return max(1, Int(visibleRect.height / max(lineHeight, 1)))
+    }
 }
 
 // MARK: - NSEvent → VimKey

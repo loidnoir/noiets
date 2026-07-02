@@ -14,6 +14,8 @@ final class SidebarViewController: NSViewController {
 
     private let scrollView = NSScrollView()
     private let outlineView = NSOutlineView()
+    private let modeBar = ColorView(color: UITheme.modeBarBackground)
+    private let modeLabel = NSTextField(labelWithString: "NORMAL")
     private var suppressSelectionCallback = false
 
     // MARK: Model
@@ -79,11 +81,11 @@ final class SidebarViewController: NSViewController {
         outlineView.outlineTableColumn = column
         outlineView.headerView = nil
         outlineView.style = .fullWidth
-        outlineView.rowHeight = 26
-        outlineView.intercellSpacing = NSSize(width: 0, height: 1)
+        outlineView.rowHeight = 30
+        outlineView.intercellSpacing = NSSize(width: 0, height: 2)
         outlineView.backgroundColor = .clear
         outlineView.focusRingType = .none
-        outlineView.indentationPerLevel = 12
+        outlineView.indentationPerLevel = 14
         outlineView.autoresizesOutlineColumn = false
         outlineView.allowsEmptySelection = true
         outlineView.dataSource = self
@@ -94,14 +96,37 @@ final class SidebarViewController: NSViewController {
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = true
         scrollView.drawsBackground = false
-        scrollView.automaticallyAdjustsContentInsets = true
+        scrollView.automaticallyAdjustsContentInsets = false
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(scrollView)
+
+        // Vim mode bar: pinned to the sidebar bottom, full width minus the
+        // same margins the rows use.
+        modeBar.wantsLayer = true
+        modeBar.layer?.cornerRadius = 7
+        modeBar.translatesAutoresizingMaskIntoConstraints = false
+        modeLabel.font = .monospacedSystemFont(ofSize: 10.5, weight: .semibold)
+        modeLabel.textColor = UITheme.sidebarSecondaryText
+        modeLabel.alignment = .center
+        modeLabel.lineBreakMode = .byTruncatingTail
+        modeLabel.translatesAutoresizingMaskIntoConstraints = false
+        modeBar.addSubview(modeLabel)
+        view.addSubview(modeBar)
+
         NSLayoutConstraint.activate([
-            scrollView.topAnchor.constraint(equalTo: view.topAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            // Content starts a breath below the titlebar, like Things.
+            scrollView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 10),
+            scrollView.bottomAnchor.constraint(equalTo: modeBar.topAnchor, constant: -8),
             scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+
+            modeBar.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 10),
+            modeBar.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -10),
+            modeBar.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -10),
+            modeBar.heightAnchor.constraint(equalToConstant: 26),
+            modeLabel.centerXAnchor.constraint(equalTo: modeBar.centerXAnchor),
+            modeLabel.centerYAnchor.constraint(equalTo: modeBar.centerYAnchor),
+            modeLabel.leadingAnchor.constraint(greaterThanOrEqualTo: modeBar.leadingAnchor, constant: 8),
         ])
 
         rebuildItems()
@@ -297,8 +322,13 @@ extension SidebarViewController: NSOutlineViewDelegate {
     }
 
     func outlineView(_ outlineView: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat {
-        if let item = item as? Item, case .separator = item.kind { return 11 }
-        return 26
+        if let item = item as? Item, case .separator = item.kind { return 18 } // pure air
+        return 30
+    }
+
+    /// Vim mode/status display (driven by the window controller).
+    func setVimStatus(_ text: String) {
+        modeLabel.stringValue = text
     }
 
     func outlineViewSelectionDidChange(_ notification: Notification) {
