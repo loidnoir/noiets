@@ -106,6 +106,9 @@ public final class MarkdownEditorView: NSView {
         blockCaret.isHidden = true
         textView.addSubview(blockCaret) // scrolls with the text
 
+        textView.onFocusChange = { [weak self] in
+            self?.refreshCaretShape()
+        }
         vim.onModeChange = { [weak self] mode in
             self?.refreshCaretShape()
             self?.onVimModeChange?(mode)
@@ -116,22 +119,100 @@ public final class MarkdownEditorView: NSView {
         refreshCaretShape()
     }
 
-    // MARK: Caret shape (block in normal/visual, blinking bar in insert)
+    // MARK: Caret shape
+    // insert → native blinking bar; normal → blinking block; visual → steady block.
+
+    private var blinkTimer: Timer?
 
     func refreshCaretShape() {
+        // The indicator can be (re)created lazily; the overlay can be dropped
+        // by view churn — re-assert both on every refresh.
+        if blockCaret.superview !== textView {
+            textView.addSubview(blockCaret)
+        }
+
         if vim.mode == .insert {
+            stopBlink()
             blockCaret.isHidden = true
-            textView.insertionPointColor = theme.accentColor // native blinking bar
+            setNativeCaretVisible(true)
             return
         }
-        textView.insertionPointColor = .clear
+        setNativeCaretVisible(false)
         let location = vim.displayCaret
         guard let rect = caretGlyphRect(at: location) else {
+            stopBlink()
             blockCaret.isHidden = true
             return
         }
         blockCaret.frame = rect
         blockCaret.isHidden = false
+        blockCaret.alphaValue = 1 // solid immediately after any movement…
+
+        if vim.mode == .normal {
+            startBlink() // …then blink while idle in normal mode
+        } else {
+            stopBlink() // steady block in visual
+        }
+    }
+
+    /// macOS 14+ draws the caret with NSTextInsertionIndicator (nested
+    /// somewhere in the text view's subtree), which ignores a transparent
+    /// insertionPointColor — its displayMode is the real switch.
+    private func setNativeCaretVisible(_ visible: Bool) {
+        textView.insertionPointColor = visible ? theme.accentColor : .clear
+        for indicator in Self.insertionIndicators(in: textView) {
+            indicator.displayMode = visible ? .automatic : .hidden
+        }
+    }
+
+    private static func insertionIndicators(in view: NSView) -> [NSTextInsertionIndicator] {
+        var found: [NSTextInsertionIndicator] = []
+        for sub in view.subviews {
+            if let indicator = sub as? NSTextInsertionIndicator {
+                found.append(indicator)
+            }
+            found.append(contentsOf: insertionIndicators(in: sub))
+        }
+        return found
+    }
+
+    /// Diagnostics for the self-test.
+    public var caretDebugInfo: [String: Any] {
+        let indicators = Self.insertionIndicators(in: textView)
+        return [
+            "blockVisible": !blockCaret.isHidden,
+            "blockFrame": NSStringFromRect(blockCaret.frame),
+            "blockAttached": blockCaret.superview === textView,
+            "indicatorsFound": indicators.count,
+            "indicatorsHidden": indicators.allSatisfy { $0.displayMode == .hidden },
+        ]
+    }
+
+    private func startBlink() {
+        stopBlink()
+        let timer = Timer(timeInterval: 0.55, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, !self.blockCaret.isHidden else { return }
+                self.blockCaret.alphaValue = self.blockCaret.alphaValue < 0.5 ? 1 : 0
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        blinkTimer = timer
+    }
+
+    private func stopBlink() {
+        blinkTimer?.invalidate()
+        blinkTimer = nil
+        blockCaret.alphaValue = 1
+    }
+
+    public override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window != nil {
+            refreshCaretShape() // first placement needs screen-coordinate space
+        } else {
+            stopBlink()
+        }
     }
 
     /// Rect of the character cell under the caret, in text-view coordinates.

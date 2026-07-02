@@ -186,10 +186,11 @@ enum SelfTest {
         keys("/here\n")
         result["searchLandedAt"] = tv.selectedRange().location // 12
 
-        // Caret shape: block (native caret cleared) in normal, bar in insert.
-        result["normalCaretCleared"] = tv.insertionPointColor.alphaComponent == 0
+        // Caret shape: block overlay + hidden indicator in normal, bar in insert.
+        result["normalCaret"] = editorView.caretDebugInfo
         key("i")
         result["insertCaretVisible"] = tv.insertionPointColor.alphaComponent > 0
+        result["insertBlockHidden"] = (editorView.caretDebugInfo["blockVisible"] as? Bool) == false
         esc()
 
         // ⌃d half-page scroll through the real key path.

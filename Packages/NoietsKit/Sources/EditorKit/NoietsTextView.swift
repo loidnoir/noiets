@@ -59,6 +59,22 @@ public final class NoietsTextView: NSTextView {
     /// The wiki-link completion popup gets first look at navigation keys.
     public weak var completionInterceptor: WikiLinkAutocomplete?
 
+    /// Focus transitions re-assert the vim caret shape (the insertion
+    /// indicator is created/reset around first-responder changes).
+    public var onFocusChange: (() -> Void)?
+
+    public override func becomeFirstResponder() -> Bool {
+        let result = super.becomeFirstResponder()
+        if result { DispatchQueue.main.async { [weak self] in self?.onFocusChange?() } }
+        return result
+    }
+
+    public override func resignFirstResponder() -> Bool {
+        let result = super.resignFirstResponder()
+        if result { DispatchQueue.main.async { [weak self] in self?.onFocusChange?() } }
+        return result
+    }
+
     public override func keyDown(with event: NSEvent) {
         if let completionInterceptor, completionInterceptor.handleKeyDown(event) {
             return
