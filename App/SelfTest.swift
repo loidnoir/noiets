@@ -197,6 +197,18 @@ enum SelfTest {
         result["insertBlockHidden"] = (editorView.caretDebugInfo["blockVisible"] as? Bool) == false
         esc()
 
+        // Visual j: on a soft-wrapped single logical line, j must land on the
+        // next RENDERED line — i.e. still inside the same logical line.
+        let longLine = String(repeating: "wrap around this text ", count: 40)
+        editorView.load(text: longLine + "\nsecond line")
+        tv.setSelectedRange(NSRange(location: 0, length: 0))
+        key("j")
+        let caretAfterJ = tv.selectedRange().location
+        result["visualJStaysInLogicalLine"] = caretAfterJ > 0
+            && caretAfterJ < (longLine as NSString).length
+        key("j")
+        result["visualJProgresses"] = tv.selectedRange().location > caretAfterJ
+
         // ⌃d half-page scroll through the real key path.
         editorView.load(text: (1...80).map { "line \($0)" }.joined(separator: "\n"))
         guard let ctrlD = NSEvent.keyEvent(

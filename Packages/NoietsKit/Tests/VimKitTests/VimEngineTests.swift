@@ -11,7 +11,10 @@ final class MockTarget: VimTextTarget {
     /// observers (the app's caret renderer runs in that moment).
     var selectionObserver: (() -> Void)?
     var selection = NSRange(location: 0, length: 0) {
-        didSet { selectionObserver?() }
+        didSet {
+            if !movingVertically { verticalGoal = nil } // like AppKit's preferred-x
+            selectionObserver?()
+        }
     }
 
     private var undoStack: [(String, NSRange)] = []
@@ -67,6 +70,21 @@ final class MockTarget: VimTextTarget {
     func scrollCaretToVisible() {}
 
     func visibleLineCount() -> Int { 20 }
+
+    /// Headless approximation of AppKit's visual movement: logical lines with
+    /// a goal column that persists across consecutive vertical moves (and
+    /// resets whenever the selection is set by any other path).
+    private var verticalGoal: Int?
+    private var movingVertically = false
+
+    func moveCaretVisually(lines: Int) {
+        let col = verticalGoal ?? Motions.column(text, of: selection.location)
+        verticalGoal = col
+        movingVertically = true
+        let pos = Motions.vertical(text, from: selection.location, lines: lines, goalColumn: col)
+        selection = NSRange(location: pos, length: 0)
+        movingVertically = false
+    }
 
     var undoDepth: Int { undoStack.count }
     var s: String { buffer as String }

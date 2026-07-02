@@ -25,4 +25,10 @@ public protocol VimTextTarget: AnyObject {
     /// Approximate number of text lines visible in the viewport (for ⌃d/⌃u
     /// half-page motions). Headless targets return a constant.
     func visibleLineCount() -> Int
+
+    /// Moves the caret by visual (soft-wrapped) lines with a pixel-stable
+    /// goal column — what j/k feel like on wrapped prose. Positive = down.
+    /// The editor delegates to native line movement; headless targets
+    /// approximate with logical lines.
+    func moveCaretVisually(lines: Int)
 }

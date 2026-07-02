@@ -163,6 +163,19 @@ extension NoietsTextView: VimTextTarget {
         let lineHeight = theme.baseFont.boundingRectForFont.height + theme.lineSpacing
         return max(1, Int(visibleRect.height / max(lineHeight, 1)))
     }
+
+    /// Native visual-line movement: wraps through soft-wrapped lines and keeps
+    /// AppKit's pixel goal column across consecutive moves — exactly what the
+    /// eye expects on wrapped prose.
+    public func moveCaretVisually(lines: Int) {
+        for _ in 0..<abs(lines) {
+            if lines > 0 {
+                moveDown(nil)
+            } else {
+                moveUp(nil)
+            }
+        }
+    }
 }
 
 // MARK: - NSEvent → VimKey

@@ -160,15 +160,7 @@ public final class VimEngine {
             case "d", "u":
                 // Half-page scroll, vim-style: caret moves with the view.
                 let half = max(1, target.visibleLineCount() / 2)
-                let lines = key.characters == "d" ? half : -half
-                let origin = isVisual ? visualHead : caret
-                let pos = Motions.vertical(target.text, from: origin, lines: lines,
-                                           goalColumn: currentGoalColumn())
-                if isVisual {
-                    updateVisualSelection(head: pos)
-                } else {
-                    moveCaret(to: pos)
-                }
+                moveVertically(lines: key.characters == "d" ? half : -half)
             default:
                 break
             }
@@ -483,6 +475,22 @@ public final class VimEngine {
         default: goalColumn = nil
         }
 
+        // Caret j/k moves by VISUAL lines (wrapped text navigates every
+        // rendered line, with a pixel-stable column). Operators below keep
+        // logical-line semantics (dj = two real lines), like vim.
+        if pendingOperator == nil {
+            switch motion {
+            case .down:
+                moveVertically(lines: effectiveCount())
+                return
+            case .up:
+                moveVertically(lines: -effectiveCount())
+                return
+            default:
+                break
+            }
+        }
+
         if let op = pendingOperator {
             // `cw` behaves like `ce` when the caret is on a word char.
             var effectiveMotion = motion
@@ -521,6 +529,22 @@ public final class VimEngine {
             updateVisualSelection(head: targetPos)
         } else {
             moveCaret(to: targetPos)
+        }
+        count = 0
+    }
+
+    /// Visual-line vertical movement for the caret (and the visual-mode head).
+    private func moveVertically(lines: Int) {
+        guard let target else { return }
+        if isVisual {
+            // Park the caret at the head, let the editor do the visual move,
+            // then rebuild the vim selection around the new head.
+            target.selection = NSRange(location: min(visualHead, maxCaret), length: 0)
+            target.moveCaretVisually(lines: lines)
+            updateVisualSelection(head: target.selection.location)
+        } else {
+            target.moveCaretVisually(lines: lines)
+            target.scrollCaretToVisible()
         }
         count = 0
     }
