@@ -7,7 +7,12 @@ import Testing
 @MainActor
 final class MockTarget: VimTextTarget {
     var buffer: NSMutableString
-    var selection = NSRange(location: 0, length: 0)
+    /// Mirrors the editor: assigning the selection synchronously notifies
+    /// observers (the app's caret renderer runs in that moment).
+    var selectionObserver: (() -> Void)?
+    var selection = NSRange(location: 0, length: 0) {
+        didSet { selectionObserver?() }
+    }
 
     private var undoStack: [(String, NSRange)] = []
     private var redoStack: [(String, NSRange)] = []
@@ -452,6 +457,34 @@ private func type(_ engine: VimEngine, _ target: MockTarget, _ text: String) {
         type(e, t, "bye")
         send(e, "\u{1B}")
         #expect(t.s == "bye world")
+    }
+
+    @Test func visualToggleCollapsesSelection() {
+        let (e, t) = makeEngine("hello", caret: 0)
+        send(e, "vl") // select "he", head on 'e'
+        #expect(t.selection == NSRange(location: 0, length: 2))
+        send(e, "v") // toggle off → collapse to head, nothing stays highlighted
+        #expect(e.mode == .normal)
+        #expect(t.selection == NSRange(location: 1, length: 0))
+    }
+
+    /// The caret renderer reads displayCaret synchronously while the selection
+    /// is being assigned — the head must already be current at that moment
+    /// (regression: block caret painted at the previous session's head).
+    @Test func displayCaretIsCurrentAtSelectionTime() {
+        let (e, t) = makeEngine("abcdef\nghijkl", caret: 0)
+        send(e, "vll\u{1B}") // first visual session, head ends at 2
+        send(e, "j")         // move away (caret line 2)
+
+        var observed: [Int] = []
+        t.selectionObserver = { observed.append(e.displayCaret) }
+        send(e, "v") // new session: at assignment time head must be the caret…
+        send(e, "l") // …and track motions immediately
+        t.selectionObserver = nil
+
+        let head = t.selection.location + max(t.selection.length - 1, 0)
+        #expect(observed.last == head)
+        #expect(!observed.contains(2)) // never the stale head from session one
     }
 
     @Test func escapeCollapsesToCaret() {

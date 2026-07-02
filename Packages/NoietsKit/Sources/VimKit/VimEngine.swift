@@ -343,19 +343,15 @@ public final class VimEngine {
         // MARK: Visual
         case "v":
             if case .visual(false) = modeVisual() {
-                mode = .normal
+                exitVisual()
             } else {
-                visualAnchor = caret
-                mode = .visual(line: false)
-                updateVisualSelection(head: caret)
+                enterVisual(line: false)
             }
         case "V":
             if case .visual(true) = modeVisual() {
-                mode = .normal
+                exitVisual()
             } else {
-                visualAnchor = caret
-                mode = .visual(line: true)
-                updateVisualSelection(head: caret)
+                enterVisual(line: true)
             }
 
         // MARK: Undo / search
@@ -795,6 +791,11 @@ public final class VimEngine {
     private func updateVisualSelection(head: Int) {
         guard let target else { return }
         let t = target.text
+        // Update the head BEFORE touching the selection: assigning it fires
+        // the editor's selection-change hook synchronously, and the caret
+        // renderer reads displayCaret (= visualHead) right then. The old
+        // order left the block caret painted at the previous session's head.
+        visualHead = head
         if case .visual(true) = mode {
             let a = Motions.lineRange(t, at: min(visualAnchor, head))
             let b = Motions.lineRange(t, at: max(visualAnchor, head))
@@ -805,12 +806,29 @@ public final class VimEngine {
             // Vim selections are inclusive of the char under the head.
             target.selection = NSRange(location: lo, length: min(hi + 1, t.length) - lo)
         }
-        visualHead = head
         target.scrollCaretToVisible()
         count = 0
     }
 
     private var visualHead = 0
+
+    private func enterVisual(line: Bool) {
+        // Seed anchor + head before the mode change so the caret renderer
+        // (fired by onModeChange) never sees a stale head.
+        visualAnchor = caret
+        visualHead = caret
+        mode = .visual(line: line)
+        updateVisualSelection(head: caret)
+    }
+
+    /// Leaving visual collapses the selection to the head (vim behavior) —
+    /// otherwise the 1-char native highlight lingers.
+    private func exitVisual() {
+        let resting = caretForVisualExit()
+        mode = .normal
+        target?.selection = NSRange(location: resting, length: 0)
+        clampCaret()
+    }
 
     private func caretForVisualExit() -> Int {
         min(visualHead, maxCaret)
