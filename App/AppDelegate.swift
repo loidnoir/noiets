@@ -23,6 +23,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
+        // Dev hook: pin the appearance for screenshot verification runs.
+        switch ProcessInfo.processInfo.environment["NOIETS_APPEARANCE"] {
+        case "dark": NSApp.appearance = NSAppearance(named: .darkAqua)
+        case "light": NSApp.appearance = NSAppearance(named: .aqua)
+        default: break
+        }
         NSApp.mainMenu = MainMenu.build()
         openVault(at: resolveVaultURL())
         NSApp.activate()

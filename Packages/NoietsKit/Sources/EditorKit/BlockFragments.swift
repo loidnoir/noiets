@@ -1,6 +1,13 @@
 import AppKit
 
-/// Full-width background band behind code lines; glyphs draw as usual.
+extension NSTextLayoutFragment {
+    /// Width of the centered writing column (the text container tracks it).
+    var columnWidth: CGFloat {
+        textLayoutManager?.textContainer?.size.width ?? 760
+    }
+}
+
+/// Column-wide background band behind code lines; glyphs draw as usual.
 final class CodeBandFragment: NSTextLayoutFragment {
     private let theme: EditorTheme
 
@@ -17,8 +24,8 @@ final class CodeBandFragment: NSTextLayoutFragment {
     }
 
     private var bandRect: CGRect {
-        // Wide horizontal band covering the text column.
-        CGRect(x: -8, y: 0, width: 4000, height: layoutFragmentFrame.height)
+        // Band spans the writing column only — never past it to the window edge.
+        CGRect(x: -8, y: 0, width: columnWidth + 16, height: layoutFragmentFrame.height)
     }
 
     override func draw(at point: CGPoint, in context: CGContext) {
@@ -193,13 +200,13 @@ final class RuleFragment: NSTextLayoutFragment {
     }
 
     override var renderingSurfaceBounds: CGRect {
-        super.renderingSurfaceBounds.union(CGRect(x: 0, y: 0, width: 4000, height: 24))
+        super.renderingSurfaceBounds.union(CGRect(x: 0, y: 0, width: columnWidth, height: 24))
     }
 
     override func draw(at point: CGPoint, in context: CGContext) {
         context.saveGState()
         context.setFillColor(theme.mutedColor.withAlphaComponent(0.35).cgColor)
-        context.fill(CGRect(x: point.x, y: point.y + 12, width: 640, height: 1))
+        context.fill(CGRect(x: point.x, y: point.y + 12, width: columnWidth, height: 1))
         context.restoreGState()
     }
 }

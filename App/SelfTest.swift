@@ -74,6 +74,10 @@ enum SelfTest {
                     out["wiki"] = wikiChecks(wc, editorView, vault: session.vault.rootURL)
                 }
             }
+            if let split = window.contentViewController as? NSSplitViewController,
+               let sidebar = split.splitViewItems.first?.viewController as? SidebarViewController {
+                out["sidebar"] = sidebar.sidebarDebugInfo
+            }
             if let outline = outlines.first {
                 out["sidebarRows"] = outline.numberOfRows
                 out["sidebarSelectedRow"] = outline.selectedRow

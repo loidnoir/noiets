@@ -25,6 +25,15 @@ final class SeamlessSplitView: NSSplitView {
     }
 }
 
+/// Outline view with the native disclosure triangle hidden by zeroing its
+/// frame. (Returning false from shouldShowOutlineCellForItem instead makes
+/// AppKit pin items expanded — collapseItem is silently ignored.)
+final class SidebarOutlineView: NSOutlineView {
+    override func frameOfOutlineCell(atRow row: Int) -> NSRect {
+        .zero
+    }
+}
+
 /// Standard sidebar cell: optional small SF Symbol + 13pt label.
 final class SidebarCellView: NSTableCellView {
     static let reuseID = NSUserInterfaceItemIdentifier("SidebarCell")

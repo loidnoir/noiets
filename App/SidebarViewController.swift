@@ -13,10 +13,11 @@ final class SidebarViewController: NSViewController {
     var onCurrentNoteRemoved: (() -> Void)?
 
     private let scrollView = NSScrollView()
-    private let outlineView = NSOutlineView()
+    private let outlineView = SidebarOutlineView()
     private let modeBar = ColorView(color: UITheme.modeBarBackground)
     private let modeLabel = NSTextField(labelWithString: "NORMAL")
     private var suppressSelectionCallback = false
+    private var suppressExpansionBookkeeping = false
 
     // MARK: Model
 
@@ -292,11 +293,56 @@ final class SidebarViewController: NSViewController {
         guard outlineView.clickedRow >= 0,
               let item = outlineView.item(atRow: outlineView.clickedRow) as? Item,
               let node = item.fileNode, node.isFolder, !item.children.isEmpty else { return }
+        toggle(item)
+    }
+
+    private func toggle(_ item: Item) {
+        // Plain calls — the animator() proxy silently swallows expand/collapse,
+        // and NSOutlineView animates these implicitly anyway.
         if outlineView.isItemExpanded(item) {
-            outlineView.animator().collapseItem(item)
+            outlineView.collapseItem(item)
         } else {
-            outlineView.animator().expandItem(item)
+            outlineView.expandItem(item)
         }
+    }
+
+    /// Diagnostics for the self-test: exercises toggling + drag wiring.
+    var sidebarDebugInfo: [String: Any] {
+        var info: [String: Any] = [:]
+        info["actionWired"] = outlineView.action == #selector(rowClicked)
+            && outlineView.target === self
+        let folderItem = rootItems.first {
+            $0.fileNode?.isFolder == true && !$0.children.isEmpty
+        }
+        if let folderItem {
+            info["rowForItem"] = outlineView.row(forItem: folderItem) // -1 = identity unknown
+            info["before"] = outlineView.isItemExpanded(folderItem)
+            outlineView.collapseItem(folderItem)
+            info["plainCollapse"] = !outlineView.isItemExpanded(folderItem)
+
+            // Sub-test A: notification side-effects (reloadItem) suppressed.
+            suppressExpansionBookkeeping = true
+            outlineView.expandItem(folderItem)
+            outlineView.collapseItem(folderItem)
+            info["collapseNoSideEffects"] = !outlineView.isItemExpanded(folderItem)
+            suppressExpansionBookkeeping = false
+
+            // Sub-test B: selection moved out of the subtree first.
+            outlineView.expandItem(folderItem)
+            outlineView.deselectAll(nil)
+            outlineView.collapseItem(folderItem)
+            info["collapseAfterDeselect"] = !outlineView.isItemExpanded(folderItem)
+            outlineView.expandItem(folderItem)
+        }
+        let ds = outlineView.dataSource
+        info["dragSourceExposed"] = ds?.responds(
+            to: #selector(NSOutlineViewDataSource.outlineView(_:pasteboardWriterForItem:))) ?? false
+        info["dropValidateExposed"] = ds?.responds(
+            to: #selector(NSOutlineViewDataSource.outlineView(_:validateDrop:proposedItem:proposedChildIndex:))) ?? false
+        info["dropAcceptExposed"] = ds?.responds(
+            to: #selector(NSOutlineViewDataSource.outlineView(_:acceptDrop:item:childIndex:))) ?? false
+        info["registeredForFileURL"] = outlineView.registeredDraggedTypes.contains(.fileURL)
+        return info
     }
 }
 
@@ -367,10 +413,6 @@ extension SidebarViewController: NSOutlineViewDelegate {
         }
     }
 
-    func outlineView(_: NSOutlineView, shouldShowOutlineCellForItem _: Any) -> Bool {
-        false
-    }
-
     /// Programmatic selection of a fixed row (e.g. ⇧⌘F selects Search).
     func selectFixed(_ fixed: Fixed) {
         guard
@@ -415,7 +457,8 @@ extension SidebarViewController: NSOutlineViewDelegate {
     }
 
     func outlineViewItemDidExpand(_ notification: Notification) {
-        guard let item = notification.userInfo?["NSObject"] as? Item else { return }
+        guard !suppressExpansionBookkeeping,
+              let item = notification.userInfo?["NSObject"] as? Item else { return }
         if let url = item.fileNode?.url {
             expandedURLs.insert(url)
         }
@@ -423,7 +466,8 @@ extension SidebarViewController: NSOutlineViewDelegate {
     }
 
     func outlineViewItemDidCollapse(_ notification: Notification) {
-        guard let item = notification.userInfo?["NSObject"] as? Item else { return }
+        guard !suppressExpansionBookkeeping,
+              let item = notification.userInfo?["NSObject"] as? Item else { return }
         if let url = item.fileNode?.url {
             expandedURLs.remove(url)
         }
