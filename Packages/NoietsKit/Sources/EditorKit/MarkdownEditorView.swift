@@ -109,6 +109,11 @@ public final class MarkdownEditorView: NSView {
         textView.onFocusChange = { [weak self] in
             self?.refreshCaretShape()
         }
+        textView.postsFrameChangedNotifications = true
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(textGeometryChanged(_:)),
+            name: NSView.frameDidChangeNotification, object: textView
+        )
         vim.onModeChange = { [weak self] mode in
             self?.refreshCaretShape()
             self?.onVimModeChange?(mode)
@@ -125,12 +130,6 @@ public final class MarkdownEditorView: NSView {
     private var blinkTimer: Timer?
 
     func refreshCaretShape() {
-        // The indicator can be (re)created lazily; the overlay can be dropped
-        // by view churn — re-assert both on every refresh.
-        if blockCaret.superview !== textView {
-            textView.addSubview(blockCaret)
-        }
-
         if vim.mode == .insert {
             stopBlink()
             blockCaret.isHidden = true
@@ -138,14 +137,7 @@ public final class MarkdownEditorView: NSView {
             return
         }
         setNativeCaretVisible(false)
-        let location = vim.displayCaret
-        guard let rect = caretGlyphRect(at: location) else {
-            stopBlink()
-            blockCaret.isHidden = true
-            return
-        }
-        blockCaret.frame = rect
-        blockCaret.isHidden = false
+        placeBlockCaret()
         blockCaret.alphaValue = 1 // solid immediately after any movement…
 
         if vim.mode == .normal {
@@ -153,6 +145,35 @@ public final class MarkdownEditorView: NSView {
         } else {
             stopBlink() // steady block in visual
         }
+
+        // Crossing block boundaries (fences, tables) restyles paragraphs and
+        // shifts line heights — TextKit 2 finishes that layout after this
+        // delegate returns, which would strand the block at pre-layout
+        // coordinates. Re-place once the pass settles.
+        DispatchQueue.main.async { [weak self] in
+            self?.placeBlockCaret()
+        }
+    }
+
+    /// Positions the block over the current display caret (no blink changes).
+    private func placeBlockCaret() {
+        guard vim.mode != .insert else { return }
+        // The overlay can be dropped by view churn — re-assert attachment.
+        if blockCaret.superview !== textView {
+            textView.addSubview(blockCaret)
+        }
+        guard let rect = caretGlyphRect(at: vim.displayCaret) else {
+            blockCaret.isHidden = true
+            return
+        }
+        blockCaret.frame = rect
+        blockCaret.isHidden = false
+    }
+
+    /// Any geometry change (document height shifts from live-preview restyles,
+    /// wrapping, window resize) re-places the block.
+    @objc private func textGeometryChanged(_ note: Notification) {
+        placeBlockCaret()
     }
 
     /// macOS 14+ draws the caret with NSTextInsertionIndicator (nested
