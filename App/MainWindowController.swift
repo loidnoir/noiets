@@ -23,11 +23,11 @@ final class MainWindowController: NSWindowController {
 
     init(session: VaultSession) {
         self.session = session
-        self.sidebarVC = SidebarViewController(session: session)
-        self.editorVC = EditorViewController(session: session)
-        self.searchVC = SearchViewController(session: session)
-        self.trashVC = TrashViewController(session: session)
-        self.inspectorVC = InspectorViewController(session: session)
+        sidebarVC = SidebarViewController(session: session)
+        editorVC = EditorViewController(session: session)
+        searchVC = SearchViewController(session: session)
+        trashVC = TrashViewController(session: session)
+        inspectorVC = InspectorViewController(session: session)
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1120, height: 760),
@@ -53,8 +53,8 @@ final class MainWindowController: NSWindowController {
         splitVC.splitView = seamless
 
         let sidebar = NSSplitViewItem(viewController: sidebarVC)
-        sidebar.minimumThickness = 190
-        sidebar.maximumThickness = 360
+        sidebar.minimumThickness = 280
+        sidebar.maximumThickness = 500
         sidebar.canCollapse = true
         sidebar.holdingPriority = NSLayoutConstraint.Priority(261)
         sidebarItem = sidebar
@@ -154,7 +154,9 @@ final class MainWindowController: NSWindowController {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+    required init?(coder _: NSCoder) {
+        fatalError("init(coder:) is not supported")
+    }
 
     // MARK: Routing
 
@@ -175,7 +177,8 @@ final class MainWindowController: NSWindowController {
     func openWikiLink(_ target: String) {
         // Index first (matches titles too), live tree as the fallback so a
         // still-warming index never causes a duplicate note.
-        let resolved = (try? session.index?.note(matchingLinkTarget: target))
+        let resolved =
+            (try? session.index?.note(matchingLinkTarget: target))
             .flatMap { $0 }
             .map { session.url(forRelPath: $0.relPath) }
             ?? session.noteInTree(matching: target)
@@ -185,11 +188,13 @@ final class MainWindowController: NSWindowController {
             return
         }
         // Create in the vault root, named after the link target.
-        guard let url = try? NoteIO.createNote(
-            in: session.vault.rootURL,
-            baseName: target,
-            contents: "# \(target)\n\n"
-        ) else { return }
+        guard
+            let url = try? NoteIO.createNote(
+                in: session.vault.rootURL,
+                baseName: target,
+                contents: "# \(target)\n\n"
+            )
+        else { return }
         session.rescan()
         sidebarVC.select(url: url, notify: false)
         open(noteAt: url)
@@ -230,7 +235,8 @@ final class MainWindowController: NSWindowController {
 
     private func updateVimBar(mode: VimMode?) {
         let current = mode ?? editorVC.editor.vim.mode
-        let text = vimStatusSuffix.isEmpty
+        let text =
+            vimStatusSuffix.isEmpty
             ? current.label
             : "\(current.label)  \(vimStatusSuffix)"
         sidebarVC.setVimStatus(text)
@@ -238,46 +244,46 @@ final class MainWindowController: NSWindowController {
 
     // MARK: Menu actions (first responder)
 
-    @objc func newNote(_ sender: Any?) {
+    @objc func newNote(_: Any?) {
         guard let url = session.createNote(in: sidebarVC.selectedFolderURL) else { return }
         sidebarVC.select(url: url, notify: false)
         open(noteAt: url)
     }
 
-    @objc func newFolder(_ sender: Any?) {
+    @objc func newFolder(_: Any?) {
         _ = session.createFolder(in: sidebarVC.selectedFolderURL)
     }
 
-    @objc func saveNote(_ sender: Any?) {
+    @objc func saveNote(_: Any?) {
         session.flushPendingSave()
     }
 
-    @objc func revealInFinder(_ sender: Any?) {
+    @objc func revealInFinder(_: Any?) {
         guard let url = session.currentNoteURL else { return }
         NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 
-    @objc func moveNoteToTrash(_ sender: Any?) {
+    @objc func moveNoteToTrash(_: Any?) {
         guard let url = session.currentNoteURL else { return }
         session.trashNote(url)
         showEmpty()
     }
 
-    @objc func toggleSidebarPane(_ sender: Any?) {
+    @objc func toggleSidebarPane(_: Any?) {
         guard let sidebarItem else { return }
         sidebarItem.animator().isCollapsed.toggle()
     }
 
-    @objc func toggleRightPanel(_ sender: Any?) {
+    @objc func toggleRightPanel(_: Any?) {
         guard let inspectorItem else { return }
         inspectorItem.animator().isCollapsed.toggle()
     }
 
-    @objc func searchVault(_ sender: Any?) {
-        sidebarVC.selectFixed(.search) // triggers showFixed(.search)
+    @objc func searchVault(_: Any?) {
+        sidebarVC.selectFixed(.search)  // triggers showFixed(.search)
     }
 
-    @objc func exportHTML(_ sender: Any?) {
+    @objc func exportHTML(_: Any?) {
         guard let url = session.currentNoteURL, let window else { return }
         session.flushPendingSave()
         let title = url.deletingPathExtension().lastPathComponent
@@ -295,7 +301,7 @@ final class MainWindowController: NSWindowController {
 
     // MARK: Overlays
 
-    @objc func quickOpen(_ sender: Any?) {
+    @objc func quickOpen(_: Any?) {
         guard let window, let index = session.index else { return }
         PalettePanel.shared.present(over: window, placeholder: "Open note…") { [weak self] query in
             guard let self else { return [] }
@@ -310,9 +316,10 @@ final class MainWindowController: NSWindowController {
         }
     }
 
-    @objc func commandPalette(_ sender: Any?) {
+    @objc func commandPalette(_: Any?) {
         guard let window else { return }
-        PalettePanel.shared.present(over: window, placeholder: "Type a command or # for tags…") { [weak self] query in
+        PalettePanel.shared.present(over: window, placeholder: "Type a command or # for tags…") {
+            [weak self] query in
             self?.paletteItems(for: query) ?? []
         }
     }
@@ -324,11 +331,14 @@ final class MainWindowController: NSWindowController {
         if q.hasPrefix("#") {
             let filter = String(q.dropFirst())
             let tags = (try? session.index?.allTags()) ?? []
-            return tags
+            return
+                tags
                 .filter { filter.isEmpty || $0.name.contains(filter) }
                 .map { tag in
-                    PalettePanel.Item(symbol: "number", title: "#\(tag.name)",
-                                      subtitle: "\(tag.count) note\(tag.count == 1 ? "" : "s")") { [weak self] in
+                    PalettePanel.Item(
+                        symbol: "number", title: "#\(tag.name)",
+                        subtitle: "\(tag.count) note\(tag.count == 1 ? "" : "s")"
+                    ) { [weak self] in
                         self?.showTag(tag.name)
                     }
                 }
@@ -345,7 +355,8 @@ final class MainWindowController: NSWindowController {
             ("Move Note to Trash", "trash", { [weak self] in self?.moveNoteToTrash(nil) }),
             ("Save Note", "internaldrive", { [weak self] in self?.saveNote(nil) }),
         ]
-        return commands
+        return
+            commands
             .filter { q.isEmpty || $0.0.lowercased().contains(q) }
             .map { cmd in
                 PalettePanel.Item(symbol: cmd.1, title: cmd.0, subtitle: nil, action: cmd.2)

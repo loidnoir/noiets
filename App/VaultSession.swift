@@ -183,6 +183,50 @@ final class VaultSession {
         }
     }
 
+    /// Moves a note or folder into another folder (drag & drop). Returns the
+    /// destination URL, or nil for no-ops/failures. Keeps the open note's
+    /// identity intact across the move.
+    @discardableResult
+    func moveItem(at url: URL, into folder: URL) -> URL? {
+        let fm = FileManager.default
+        let source = url.standardizedFileURL
+        var dest = folder.appendingPathComponent(url.lastPathComponent)
+        guard dest.standardizedFileURL != source,
+              source.deletingLastPathComponent() != folder.standardizedFileURL else { return nil }
+
+        let base = url.deletingPathExtension().lastPathComponent
+        let ext = url.pathExtension
+        var counter = 2
+        while fm.fileExists(atPath: dest.path) {
+            let name = ext.isEmpty ? "\(base) \(counter)" : "\(base) \(counter).\(ext)"
+            dest = folder.appendingPathComponent(name)
+            counter += 1
+        }
+        do {
+            try fm.moveItem(at: url, to: dest)
+        } catch {
+            Self.log.error("Move failed: \(error.localizedDescription)")
+            return nil
+        }
+
+        // Re-point the open note if it (or its containing folder) moved —
+        // otherwise the next autosave would resurrect the old path.
+        if let current = currentNoteURL {
+            if current.standardizedFileURL == source {
+                currentNoteURL = dest
+            } else if current.path.hasPrefix(source.path + "/") {
+                let suffix = String(current.path.dropFirst(source.path.count))
+                currentNoteURL = URL(fileURLWithPath: dest.path + suffix)
+            }
+        }
+
+        rescan()
+        if let reindexer {
+            Task { await reindexer.pathsChanged([source.path, dest.path]) }
+        }
+        return dest
+    }
+
     func trashNote(_ url: URL) {
         let removesCurrent = currentNoteURL == url
             || currentNoteURL?.path.hasPrefix(url.path + "/") == true

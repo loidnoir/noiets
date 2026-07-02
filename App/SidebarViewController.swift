@@ -50,7 +50,9 @@ final class SidebarViewController: NSViewController {
         let kind: Kind
         var children: [Item] = []
 
-        init(_ kind: Kind) { self.kind = kind }
+        init(_ kind: Kind) {
+            self.kind = kind
+        }
 
         var fileNode: FileNode? {
             if case .node(let n) = kind { return n }
@@ -68,7 +70,9 @@ final class SidebarViewController: NSViewController {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+    required init?(coder _: NSCoder) {
+        fatalError("init(coder:) is not supported")
+    }
 
     // MARK: View
 
@@ -81,16 +85,28 @@ final class SidebarViewController: NSViewController {
         outlineView.outlineTableColumn = column
         outlineView.headerView = nil
         outlineView.style = .fullWidth
-        outlineView.rowHeight = 30
-        outlineView.intercellSpacing = NSSize(width: 0, height: 2)
+        outlineView.rowHeight = 28
+        outlineView.intercellSpacing = NSSize(width: 0, height: 0)
         outlineView.backgroundColor = .clear
         outlineView.focusRingType = .none
-        outlineView.indentationPerLevel = 14
+        // Folder cell text sits at leading 8 + icon 18 + gap 4 = 30; one
+        // indent level (22) + the child cell's own leading 8 lands children's
+        // text at exactly 30 too — names align at every depth.
+        outlineView.indentationPerLevel = 22
         outlineView.autoresizesOutlineColumn = false
         outlineView.allowsEmptySelection = true
         outlineView.dataSource = self
         outlineView.delegate = self
         outlineView.menu = buildContextMenu()
+
+        // Click anywhere on a folder row to open/close it.
+        outlineView.target = self
+        outlineView.action = #selector(rowClicked)
+
+        // Drag & drop: move notes/folders between folders (and to the root).
+        outlineView.registerForDraggedTypes([.fileURL])
+        outlineView.setDraggingSourceOperationMask(.move, forLocal: true)
+        outlineView.draggingDestinationFeedbackStyle = .regular
 
         scrollView.documentView = outlineView
         scrollView.hasVerticalScroller = true
@@ -105,7 +121,7 @@ final class SidebarViewController: NSViewController {
         modeBar.wantsLayer = true
         modeBar.layer?.cornerRadius = 7
         modeBar.translatesAutoresizingMaskIntoConstraints = false
-        modeLabel.font = .monospacedSystemFont(ofSize: 10.5, weight: .semibold)
+        modeLabel.font = .monospacedSystemFont(ofSize: 10.5, weight: .bold)
         modeLabel.textColor = UITheme.sidebarSecondaryText
         modeLabel.alignment = .center
         modeLabel.lineBreakMode = .byTruncatingTail
@@ -115,7 +131,9 @@ final class SidebarViewController: NSViewController {
 
         NSLayoutConstraint.activate([
             // Content starts a breath below the titlebar, like Things.
-            scrollView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 10),
+            scrollView.topAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 10
+            ),
             scrollView.bottomAnchor.constraint(equalTo: modeBar.topAnchor, constant: -8),
             scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -126,7 +144,9 @@ final class SidebarViewController: NSViewController {
             modeBar.heightAnchor.constraint(equalToConstant: 26),
             modeLabel.centerXAnchor.constraint(equalTo: modeBar.centerXAnchor),
             modeLabel.centerYAnchor.constraint(equalTo: modeBar.centerYAnchor),
-            modeLabel.leadingAnchor.constraint(greaterThanOrEqualTo: modeBar.leadingAnchor, constant: 8),
+            modeLabel.leadingAnchor.constraint(
+                greaterThanOrEqualTo: modeBar.leadingAnchor, constant: 8
+            ),
         ])
 
         rebuildItems()
@@ -198,14 +218,16 @@ final class SidebarViewController: NSViewController {
 
     func selectedNodeURL() -> URL? {
         guard outlineView.selectedRow >= 0,
-              let item = outlineView.item(atRow: outlineView.selectedRow) as? Item else { return nil }
+            let item = outlineView.item(atRow: outlineView.selectedRow) as? Item
+        else { return nil }
         return item.fileNode?.url
     }
 
     /// The folder new notes should land in, based on the current selection.
     var selectedFolderURL: URL? {
         guard let item = outlineView.item(atRow: outlineView.selectedRow) as? Item,
-              let node = item.fileNode else { return nil }
+            let node = item.fileNode
+        else { return nil }
         return node.isFolder ? node.url : node.url.deletingLastPathComponent()
     }
 
@@ -231,7 +253,8 @@ final class SidebarViewController: NSViewController {
 
     private func clickedNode() -> FileNode? {
         guard outlineView.clickedRow >= 0,
-              let item = outlineView.item(atRow: outlineView.clickedRow) as? Item else { return nil }
+            let item = outlineView.item(atRow: outlineView.clickedRow) as? Item
+        else { return nil }
         return item.fileNode
     }
 
@@ -240,26 +263,39 @@ final class SidebarViewController: NSViewController {
         return node.isFolder ? node.url : node.url.deletingLastPathComponent()
     }
 
-    @objc private func ctxNewNote(_ sender: Any?) {
+    @objc private func ctxNewNote(_: Any?) {
         guard let url = session.createNote(in: clickedFolderURL()) else { return }
         select(url: url, notify: false)
         onSelectNote?(url)
     }
 
-    @objc private func ctxNewFolder(_ sender: Any?) {
+    @objc private func ctxNewFolder(_: Any?) {
         _ = session.createFolder(in: clickedFolderURL())
     }
 
-    @objc private func ctxReveal(_ sender: Any?) {
+    @objc private func ctxReveal(_: Any?) {
         guard let node = clickedNode() else { return }
         NSWorkspace.shared.activateFileViewerSelecting([node.url])
     }
 
-    @objc private func ctxTrash(_ sender: Any?) {
+    @objc private func ctxTrash(_: Any?) {
         guard let node = clickedNode() else { return }
         session.trashNote(node.url)
         if session.currentNoteURL == nil {
             onCurrentNoteRemoved?()
+        }
+    }
+
+    // MARK: Folder toggling
+
+    @objc private func rowClicked() {
+        guard outlineView.clickedRow >= 0,
+              let item = outlineView.item(atRow: outlineView.clickedRow) as? Item,
+              let node = item.fileNode, node.isFolder, !item.children.isEmpty else { return }
+        if outlineView.isItemExpanded(item) {
+            outlineView.animator().collapseItem(item)
+        } else {
+            outlineView.animator().expandItem(item)
         }
     }
 }
@@ -267,17 +303,17 @@ final class SidebarViewController: NSViewController {
 // MARK: - Data source
 
 extension SidebarViewController: NSOutlineViewDataSource {
-    func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
+    func outlineView(_: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
         guard let item = item as? Item else { return rootItems.count }
         return item.children.count
     }
 
-    func outlineView(_ outlineView: NSOutlineView, child index: Int, ofItem item: Any?) -> Any {
+    func outlineView(_: NSOutlineView, child index: Int, ofItem item: Any?) -> Any {
         guard let item = item as? Item else { return rootItems[index] }
         return item.children[index]
     }
 
-    func outlineView(_ outlineView: NSOutlineView, isItemExpandable item: Any) -> Bool {
+    func outlineView(_: NSOutlineView, isItemExpandable item: Any) -> Bool {
         guard let item = item as? Item else { return false }
         return !item.children.isEmpty
     }
@@ -286,23 +322,44 @@ extension SidebarViewController: NSOutlineViewDataSource {
 // MARK: - Delegate
 
 extension SidebarViewController: NSOutlineViewDelegate {
-    func outlineView(_ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any) -> NSView? {
+    func outlineView(_ outlineView: NSOutlineView, viewFor _: NSTableColumn?, item: Any) -> NSView?
+    {
         guard let item = item as? Item else { return nil }
         switch item.kind {
         case .separator:
             return SeparatorCellView.make(in: outlineView)
         case .fixed(let fixed):
-            return SidebarCellView.make(in: outlineView, title: fixed.title, symbol: fixed.symbol, isFolder: false)
+            return SidebarCellView.make(
+                in: outlineView, title: fixed.title, symbol: fixed.symbol, isFolder: false
+            )
         case .node(let node):
-            return SidebarCellView.make(in: outlineView, title: node.title, symbol: nil, isFolder: node.isFolder)
+            if node.isFolder {
+                return SidebarFolderCellView.make(
+                    in: outlineView,
+                    title: node.title,
+                    isExpanded: outlineView.isItemExpanded(item),
+                    isExpandable: !item.children.isEmpty
+                ) { [weak outlineView, weak item] in
+                    guard let outlineView, let item else { return false }
+                    if outlineView.isItemExpanded(item) {
+                        outlineView.collapseItem(item)
+                        return false
+                    }
+                    outlineView.expandItem(item)
+                    return true
+                }
+            }
+            return SidebarCellView.make(
+                in: outlineView, title: node.title, symbol: nil, isFolder: false
+            )
         }
     }
 
-    func outlineView(_ outlineView: NSOutlineView, rowViewForItem item: Any) -> NSTableRowView? {
+    func outlineView(_: NSOutlineView, rowViewForItem _: Any) -> NSTableRowView? {
         SoftRowView()
     }
 
-    func outlineView(_ outlineView: NSOutlineView, shouldSelectItem item: Any) -> Bool {
+    func outlineView(_: NSOutlineView, shouldSelectItem item: Any) -> Bool {
         guard let item = item as? Item else { return false }
         switch item.kind {
         case .separator: return false
@@ -310,20 +367,32 @@ extension SidebarViewController: NSOutlineViewDelegate {
         }
     }
 
+    func outlineView(_: NSOutlineView, shouldShowOutlineCellForItem _: Any) -> Bool {
+        false
+    }
+
     /// Programmatic selection of a fixed row (e.g. ⇧⌘F selects Search).
     func selectFixed(_ fixed: Fixed) {
-        guard let item = rootItems.first(where: {
-            if case .fixed(let f) = $0.kind { return f == fixed }
-            return false
-        }) else { return }
+        guard
+            let item = rootItems.first(where: {
+                if case .fixed(let f) = $0.kind { return f == fixed }
+                return false
+            })
+        else { return }
         let row = outlineView.row(forItem: item)
         guard row >= 0 else { return }
         outlineView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
     }
 
-    func outlineView(_ outlineView: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat {
-        if let item = item as? Item, case .separator = item.kind { return 18 } // pure air
-        return 30
+    func outlineView(_: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat {
+        if let item = item as? Item {
+            switch item.kind {
+            case .separator: return 18 // pure air
+            case .node(let node) where node.isFolder: return 34
+            case .fixed, .node: return 28
+            }
+        }
+        return 28
     }
 
     /// Vim mode/status display (driven by the window controller).
@@ -331,9 +400,10 @@ extension SidebarViewController: NSOutlineViewDelegate {
         modeLabel.stringValue = text
     }
 
-    func outlineViewSelectionDidChange(_ notification: Notification) {
+    func outlineViewSelectionDidChange(_: Notification) {
         guard !suppressSelectionCallback,
-              let item = outlineView.item(atRow: outlineView.selectedRow) as? Item else { return }
+            let item = outlineView.item(atRow: outlineView.selectedRow) as? Item
+        else { return }
         switch item.kind {
         case .fixed(let fixed):
             onSelectFixed?(fixed)
@@ -345,14 +415,91 @@ extension SidebarViewController: NSOutlineViewDelegate {
     }
 
     func outlineViewItemDidExpand(_ notification: Notification) {
-        if let url = ((notification.userInfo?["NSObject"] as? Item)?.fileNode?.url) {
+        guard let item = notification.userInfo?["NSObject"] as? Item else { return }
+        if let url = item.fileNode?.url {
             expandedURLs.insert(url)
         }
+        outlineView.reloadItem(item) // refresh the chevron direction
     }
 
     func outlineViewItemDidCollapse(_ notification: Notification) {
-        if let url = ((notification.userInfo?["NSObject"] as? Item)?.fileNode?.url) {
+        guard let item = notification.userInfo?["NSObject"] as? Item else { return }
+        if let url = item.fileNode?.url {
             expandedURLs.remove(url)
         }
+        outlineView.reloadItem(item)
+    }
+}
+
+// MARK: - Drag & drop (filesystem moves)
+
+extension SidebarViewController {
+    func outlineView(_: NSOutlineView, pasteboardWriterForItem item: Any) -> NSPasteboardWriting? {
+        guard let node = (item as? Item)?.fileNode else { return nil }
+        return node.url as NSURL
+    }
+
+    func outlineView(
+        _ outlineView: NSOutlineView,
+        validateDrop info: NSDraggingInfo,
+        proposedItem item: Any?,
+        proposedChildIndex _: Int
+    ) -> NSDragOperation {
+        guard let sources = draggedURLs(info), !sources.isEmpty else { return [] }
+        let (targetItem, folder) = dropTarget(for: item)
+        let target = folder.standardizedFileURL
+        for source in sources.map(\.standardizedFileURL) {
+            if source.deletingLastPathComponent() == target { return [] } // no-op
+            if target == source || target.path.hasPrefix(source.path + "/") {
+                return [] // folder into itself / its own descendant
+            }
+        }
+        // Always drop ON the resolved folder (order is alphabetical, not manual).
+        outlineView.setDropItem(targetItem, dropChildIndex: NSOutlineViewDropOnItemIndex)
+        return .move
+    }
+
+    func outlineView(
+        _: NSOutlineView,
+        acceptDrop info: NSDraggingInfo,
+        item: Any?,
+        childIndex _: Int
+    ) -> Bool {
+        guard let sources = draggedURLs(info), !sources.isEmpty else { return false }
+        let (_, folder) = dropTarget(for: item)
+        expandedURLs.insert(folder) // reveal where things landed
+        var lastMoved: URL?
+        for source in sources {
+            if let dest = session.moveItem(at: source, into: folder) {
+                lastMoved = dest
+            }
+        }
+        guard let lastMoved else { return false }
+        select(url: lastMoved, notify: false)
+        return true
+    }
+
+    /// Resolves any proposed drop item to (folder item, folder URL): folders
+    /// take the drop directly, files redirect to their parent, fixed rows and
+    /// the gap mean the vault root.
+    private func dropTarget(for proposed: Any?) -> (Item?, URL) {
+        guard let item = proposed as? Item, let node = item.fileNode else {
+            return (nil, session.vault.rootURL)
+        }
+        if node.isFolder {
+            return (item, node.url)
+        }
+        let parent = node.url.deletingLastPathComponent().standardizedFileURL
+        if parent == session.vault.rootURL.standardizedFileURL {
+            return (nil, parent)
+        }
+        return (itemsByURL[parent], parent)
+    }
+
+    private func draggedURLs(_ info: NSDraggingInfo) -> [URL]? {
+        info.draggingPasteboard.readObjects(
+            forClasses: [NSURL.self],
+            options: [.urlReadingFileURLsOnly: true]
+        ) as? [URL]
     }
 }
