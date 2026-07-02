@@ -41,6 +41,7 @@ final class EditorViewController: NSViewController {
         ])
 
         editor.isHidden = true
+        editor.resourceRoot = session.vault.rootURL
         editor.onTextChange = { [weak self] in
             guard let self else { return }
             let editorView = self.editor

@@ -1,5 +1,6 @@
 import AppKit
 import MarkdownKit
+import RenderKit
 import SharedModel
 
 public extension NSAttributedString.Key {
@@ -31,6 +32,10 @@ public final class IncrementalHighlighter: NSObject {
 
     private var scan: BlockScan?
     private var signature: [Int] = []
+    private let codeEngine = BuiltinCodeHighlighter()
+
+    /// Read access for the layout controller (fragment classification).
+    public var currentScan: BlockScan? { scan }
 
     /// Font used to collapse hidden runs to (near) zero width while keeping
     /// character indices intact.
@@ -56,22 +61,47 @@ public final class IncrementalHighlighter: NSObject {
     }
 
     /// Moves the active (raw-source) paragraph after a selection change and
-    /// restyles only the lines whose active state flipped.
+    /// restyles only the lines whose active state flipped. Tables activate as
+    /// a whole — entering any row reverts the entire table to source (and its
+    /// grid fragments regenerate), like Obsidian.
     public func updateActiveParagraph(_ storage: NSTextStorage, to newRange: NSRange) {
-        guard newRange != activeParagraphRange else { return }
+        let expanded = expandRangeToTable(newRange, text: storage.string as NSString)
+        guard expanded != activeParagraphRange else { return }
         let oldRange = activeParagraphRange
-        activeParagraphRange = newRange
+        activeParagraphRange = expanded
         guard let scan, storage.length > 0 else { return }
 
         var spans: [ClosedRange<Int>] = []
         if oldRange.location <= storage.length {
             spans.append(scan.lineIndices(intersecting: oldRange))
         }
-        spans.append(scan.lineIndices(intersecting: newRange))
+        spans.append(scan.lineIndices(intersecting: expanded))
         for span in spans {
             let clamped = min(span.lowerBound, scan.lines.count - 1)...min(span.upperBound, scan.lines.count - 1)
             applyStyles(storage, text: storage.string as NSString, scan: scan, lineSpan: clamped)
         }
+    }
+
+    /// If the selection touches a table, expand to the whole run of table lines.
+    private func expandRangeToTable(_ range: NSRange, text: NSString) -> NSRange {
+        guard let scan, !scan.lines.isEmpty, text.length > 0 else { return range }
+        let span = scan.lineIndices(intersecting: range)
+        func isTable(_ i: Int) -> Bool {
+            switch scan.lines[i].kind {
+            case .tableRow, .tableDelimiterRow: return true
+            default: return false
+            }
+        }
+        var first = min(span.lowerBound, scan.lines.count - 1)
+        var last = min(span.upperBound, scan.lines.count - 1)
+        guard isTable(first) || isTable(last) else { return range }
+        while first > 0, isTable(first - 1) { first -= 1 }
+        while last < scan.lines.count - 1, isTable(last + 1) { last += 1 }
+        if !isTable(first) { first = min(first + 1, last) }
+        let start = scan.lines[first].range.location
+        let end = scan.lines[last].range.location + scan.lines[last].range.length
+        return NSRange(location: min(start, range.location),
+                       length: max(end, range.location + range.length) - min(start, range.location))
     }
 
     /// Called from didProcessEditing after a character edit.
@@ -286,10 +316,30 @@ public final class IncrementalHighlighter: NSObject {
         case .codeFenceDelimiter, .frontmatterDelimiter, .horizontalRule,
              .tablePipe, .tableDelimiterRow:
             storage.addAttribute(.foregroundColor, value: theme.mutedColor, range: range)
-        case .codeContent:
+        case .codeContent(let language):
             storage.addAttribute(.foregroundColor, value: theme.textColor, range: range)
+            if let language, codeEngine.supports(language: language) {
+                let line = (storage.string as NSString).substring(with: range)
+                for span in codeEngine.spans(forLine: line, language: language) {
+                    let absolute = NSRange(location: range.location + span.range.location,
+                                           length: span.range.length)
+                    guard absolute.location + absolute.length <= range.location + range.length else { continue }
+                    storage.addAttribute(.foregroundColor, value: color(for: span.kind), range: absolute)
+                }
+            }
         case .frontmatterContent:
             storage.addAttribute(.foregroundColor, value: theme.mutedColor, range: range)
+        }
+    }
+
+    private func color(for kind: CodeSpanKind) -> NSColor {
+        switch kind {
+        case .keyword: return theme.codeKeyword
+        case .type: return theme.codeType
+        case .string: return theme.codeString
+        case .comment: return theme.codeComment
+        case .number: return theme.codeNumber
+        case .property: return theme.codeType
         }
     }
 

@@ -114,6 +114,26 @@ final class MainWindowController: NSWindowController {
         if ProcessInfo.processInfo.environment["NOIETS_SHOW_INSPECTOR"] == "1" {
             inspector.isCollapsed = false
         }
+        applyDevHooks()
+    }
+
+    /// Dev-only: NOIETS_OPEN=<link target> opens a note by name;
+    /// NOIETS_SCROLL_TO=<needle> scrolls the editor to the first occurrence.
+    private func applyDevHooks() {
+        let env = ProcessInfo.processInfo.environment
+        if let name = env["NOIETS_OPEN"], !name.isEmpty {
+            openWikiLink(name)
+        }
+        if let needle = env["NOIETS_SCROLL_TO"], !needle.isEmpty {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+                guard let self else { return }
+                let text = self.editorVC.editor.string as NSString
+                let range = text.range(of: needle)
+                if range.location != NSNotFound {
+                    self.editorVC.jump(to: NSRange(location: range.location, length: 0))
+                }
+            }
+        }
     }
 
     @available(*, unavailable)

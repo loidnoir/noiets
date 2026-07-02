@@ -17,6 +17,13 @@ public struct EditorTheme {
     public var highlightBackground: NSColor
     public var background: NSColor
 
+    // Code-block syntax palette (muted, Things-calm).
+    public var codeKeyword: NSColor
+    public var codeType: NSColor
+    public var codeString: NSColor
+    public var codeComment: NSColor
+    public var codeNumber: NSColor
+
     public static func standard() -> EditorTheme {
         EditorTheme(
             baseFontSize: 15,
@@ -32,7 +39,17 @@ public struct EditorTheme {
             codeBackground: dynamic(light: NSColor(white: 0.955, alpha: 1), dark: NSColor(white: 0.16, alpha: 1)),
             highlightBackground: dynamic(light: NSColor(red: 1.0, green: 0.95, blue: 0.60, alpha: 1),
                                          dark: NSColor(red: 0.42, green: 0.37, blue: 0.12, alpha: 1)),
-            background: dynamic(light: .white, dark: NSColor(white: 0.115, alpha: 1))
+            background: dynamic(light: .white, dark: NSColor(white: 0.115, alpha: 1)),
+            codeKeyword: dynamic(light: NSColor(red: 0.61, green: 0.15, blue: 0.55, alpha: 1),
+                                 dark: NSColor(red: 0.81, green: 0.51, blue: 0.87, alpha: 1)),
+            codeType: dynamic(light: NSColor(red: 0.16, green: 0.42, blue: 0.62, alpha: 1),
+                              dark: NSColor(red: 0.45, green: 0.72, blue: 0.90, alpha: 1)),
+            codeString: dynamic(light: NSColor(red: 0.75, green: 0.28, blue: 0.16, alpha: 1),
+                                dark: NSColor(red: 0.90, green: 0.57, blue: 0.44, alpha: 1)),
+            codeComment: dynamic(light: NSColor(white: 0.58, alpha: 1),
+                                 dark: NSColor(white: 0.42, alpha: 1)),
+            codeNumber: dynamic(light: NSColor(red: 0.15, green: 0.45, blue: 0.40, alpha: 1),
+                                dark: NSColor(red: 0.48, green: 0.78, blue: 0.68, alpha: 1))
         )
     }
 

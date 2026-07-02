@@ -9,7 +9,13 @@ public final class MarkdownEditorView: NSView {
     public let textView: NoietsTextView
     public let scrollView = NSScrollView()
     public let highlighter: IncrementalHighlighter
+    public private(set) var layoutController: LivePreviewLayoutController?
     public let vim = VimEngine()
+
+    /// Root for resolving relative image paths (the vault folder).
+    public var resourceRoot: URL? {
+        didSet { layoutController?.imageProvider.rootURL = resourceRoot }
+    }
 
     private let modePill = NSTextField(labelWithString: "")
 
@@ -58,6 +64,14 @@ public final class MarkdownEditorView: NSView {
         textView.delegate = self
         textView.textStorage?.delegate = highlighter
         highlighter.textView = textView
+
+        let controller = LivePreviewLayoutController(
+            theme: theme,
+            highlighter: highlighter,
+            contentStorage: textView.textContentStorage
+        )
+        layoutController = controller
+        textView.textLayoutManager?.delegate = controller
 
         scrollView.documentView = textView
         scrollView.translatesAutoresizingMaskIntoConstraints = false

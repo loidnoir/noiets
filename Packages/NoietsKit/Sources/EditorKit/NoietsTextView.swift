@@ -44,6 +44,11 @@ public final class NoietsTextView: NSTextView {
         drawsBackground = true
         backgroundColor = theme.background
         insertionPointColor = theme.accentColor
+        // No underlines on links — accent color + hand cursor only.
+        linkTextAttributes = [
+            .foregroundColor: theme.accentColor,
+            .cursor: NSCursor.pointingHand,
+        ]
         typingAttributes = theme.typingAttributes()
         defaultParagraphStyle = theme.defaultParagraphStyle
         textContainerInset = NSSize(width: 28, height: 28)
