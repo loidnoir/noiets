@@ -223,6 +223,53 @@ enum SelfTest {
         key("k") // back on line 1: still ≈ col 15
         result["stickyRestoresUpward"] = abs(tv.selectedRange().location - 15) <= 1
 
+        // j from a mid-line column onto an EMPTY line must land on it (and
+        // continue restoring the column past it).
+        editorView.load(text: "aaaaaaaaaa\n\nbbbbbbbbbb")
+        tv.setSelectedRange(NSRange(location: 5, length: 0))
+        key("j")
+        let onEmpty = tv.selectedRange().location
+        key("j")
+        let onThird = tv.selectedRange().location
+        key("k")
+        let backOnEmpty = tv.selectedRange().location
+        result["emptyLineTrace"] = [onEmpty, onThird, backOnEmpty] // want [11, ~17, 11]
+        result["jLandsOnEmptyLine"] = onEmpty == 11
+        result["jThroughEmptyRestores"] = abs(onThird - 17) <= 1
+        result["kBackOntoEmpty"] = backOnEmpty == 11
+
+        // Same, but with the real-world ingredients: a WRAPPED paragraph above
+        // the empty line, and a styled heading (extra paragraph spacing).
+        let wrapped = String(repeating: "wrap this text ", count: 30)
+        editorView.load(text: wrapped + "\n\nend")
+        let wrappedLen = (wrapped as NSString).length
+        tv.setSelectedRange(NSRange(location: wrappedLen - 5, length: 0)) // last visual row
+        key("j")
+        result["wrapThenEmpty"] = tv.selectedRange().location // want wrappedLen + 1
+        result["wrapThenEmptyExpected"] = wrappedLen + 1
+
+        editorView.load(text: "# Heading here\n\nbody text")
+        tv.setSelectedRange(NSRange(location: 5, length: 0))
+        key("j")
+        result["headingThenEmpty"] = tv.selectedRange().location // want 15
+
+        // Large-x goal onto an empty line (the reported case: mid/late column
+        // of wide prose, empty line below).
+        let wide = String(repeating: "abcdefgh ", count: 8) // ~72 chars, unwrapped
+        editorView.load(text: wide + "\n\n" + wide)
+        let wideLen = (wide as NSString).length
+        tv.setSelectedRange(NSRange(location: wideLen - 4, length: 0)) // near line end
+        key("j")
+        result["bigXOntoEmpty"] = tv.selectedRange().location // want wideLen + 1
+        result["bigXOntoEmptyExpected"] = wideLen + 1
+        key("j")
+        // The goal is pixel-based; with wrapping the exact char index varies
+        // with pane width. What must hold: we crossed ONTO line 3 (not stuck,
+        // not skipped) at a non-zero column (goal survived the empty line).
+        let below = tv.selectedRange().location
+        result["bigXBelowRaw"] = below
+        result["bigXRestoresBelow"] = below > wideLen + 2 && below <= wideLen + 2 + wideLen
+
         // ⌃d half-page scroll through the real key path.
         editorView.load(text: (1...80).map { "line \($0)" }.joined(separator: "\n"))
         guard let ctrlD = NSEvent.keyEvent(

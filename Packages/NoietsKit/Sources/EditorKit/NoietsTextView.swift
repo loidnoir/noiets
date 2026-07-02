@@ -188,12 +188,23 @@ extension NoietsTextView: VimTextTarget {
             }
         }
 
-        // Land on the destination visual line at the remembered x.
+        // Land on the destination visual line at the remembered x. The result
+        // is clamped to the logical line moveDown/moveUp actually reached:
+        // on an empty (or short) line a far-out x has no glyphs, and the hit
+        // test can otherwise escape to a neighboring line.
         if let goal, let lineRect = caretViewRect() {
-            let index = characterIndexForInsertion(at: NSPoint(x: goal, y: lineRect.midY))
-            if index >= 0, index <= (string as NSString).length {
-                setSelectedRange(NSRange(location: index, length: 0))
+            let ns = string as NSString
+            guard ns.length > 0 else { return }
+            let landed = min(selectedRange().location, ns.length - 1)
+            let lineRange = ns.lineRange(for: NSRange(location: landed, length: 0))
+            var contentEnd = lineRange.location + lineRange.length
+            if contentEnd > lineRange.location,
+               ns.character(at: contentEnd - 1) == 0x0A {
+                contentEnd -= 1
             }
+            let index = characterIndexForInsertion(at: NSPoint(x: goal, y: lineRect.midY))
+            let clamped = min(max(index, lineRange.location), contentEnd)
+            setSelectedRange(NSRange(location: clamped, length: 0))
         }
     }
 
