@@ -51,11 +51,13 @@ public struct Token: Equatable, Hashable, Sendable {
 }
 
 public extension TokenKind {
-    /// Marker tokens are the ones Live Preview hides on inactive lines.
-    var isMarker: Bool {
+    /// Tokens Live Preview unconditionally hides on inactive lines. (The `#` of
+    /// a tag and fence/table/task markers stay visible; linkURL/wikiLinkTarget
+    /// hide conditionally based on neighboring tokens — see the highlighter.)
+    var hiddenInPreview: Bool {
         switch self {
         case .headingMarker, .emphasisMarker, .inlineCodeMarker, .linkBracket,
-             .wikiLinkMarker, .tagMarker, .mathMarker:
+             .wikiLinkMarker, .mathMarker:
             return true
         default:
             return false

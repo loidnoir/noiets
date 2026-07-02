@@ -1,4 +1,5 @@
 import AppKit
+import EditorKit
 import VaultStore
 
 /// Dev-only functional smoke test: NOIETS_SELFTEST=1 makes the app print a
@@ -52,6 +53,9 @@ enum SelfTest {
             } else {
                 out["editorTextLength"] = -1
             }
+            if let editor = textViews.first {
+                out["livePreview"] = livePreviewChecks(editor)
+            }
             if let outline = outlines.first {
                 out["sidebarRows"] = outline.numberOfRows
                 out["sidebarSelectedRow"] = outline.selectedRow
@@ -64,5 +68,43 @@ enum SelfTest {
         print("NOIETS_SELFTEST_BEGIN")
         print(String(data: data, encoding: .utf8) ?? "{}")
         print("NOIETS_SELFTEST_END")
+    }
+
+    /// Exercises Live Preview end to end inside the real editor: markers are
+    /// hidden while the paragraph is inactive, revealed when the caret enters,
+    /// re-hidden when it leaves.
+    private static func livePreviewChecks(_ editor: NSTextView) -> [String: Any] {
+        var result: [String: Any] = [:]
+        guard let storage = editor.textStorage else { return ["error": "no storage"] }
+        let text = editor.string as NSString
+        let boldMarker = text.range(of: "**Bold**")
+        guard boldMarker.location != NSNotFound else { return ["error": "no bold sample"] }
+
+        func isHidden(_ index: Int) -> Bool {
+            guard index < storage.length else { return false }
+            return storage.attribute(.noietsHidden, at: index, effectiveRange: nil) != nil
+        }
+
+        editor.window?.makeFirstResponder(editor)
+        editor.setSelectedRange(NSRange(location: 0, length: 0))
+        result["hiddenWhileInactive"] = isHidden(boldMarker.location)
+
+        // Caret into the bold word → paragraph becomes active → markers reveal.
+        editor.setSelectedRange(NSRange(location: boldMarker.location + 3, length: 0))
+        result["revealedWhenActive"] = !isHidden(boldMarker.location)
+
+        // Leave again → re-hidden.
+        editor.setSelectedRange(NSRange(location: 0, length: 0))
+        result["reHiddenAfterLeave"] = isHidden(boldMarker.location)
+
+        // Caret skip: place the caret right before the hidden `**` and step
+        // forward via the real movement selector (user path → snap applies).
+        editor.setSelectedRange(NSRange(location: boldMarker.location, length: 0))
+        // (paragraph became active by the placement — move away first)
+        editor.setSelectedRange(NSRange(location: 0, length: 0))
+        editor.moveDown(nil)
+        result["caretAfterMoveDown"] = editor.selectedRange().location
+
+        return result
     }
 }

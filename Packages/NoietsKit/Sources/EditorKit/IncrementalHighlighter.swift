@@ -2,6 +2,12 @@ import AppKit
 import MarkdownKit
 import SharedModel
 
+public extension NSAttributedString.Key {
+    /// Marks a run Live Preview has collapsed (rendered invisible). Used for
+    /// caret snapping; never serialized (attributes don't affect copied text).
+    static let noietsHidden = NSAttributedString.Key("noietsHidden")
+}
+
 /// Applies syntax styling to the raw markdown in the text storage, driven by
 /// NSTextStorageDelegate. Per keystroke it re-scans block structure (cheap,
 /// line-level) and restyles only the lines whose tokens can have changed
@@ -13,10 +19,22 @@ import SharedModel
 public final class IncrementalHighlighter: NSObject {
     public let theme: EditorTheme
 
-    /// Live Preview (M2) flips marker tokens to hidden on inactive paragraphs;
-    /// M1 keeps everything visible.
+    /// The paragraph range(s) the selection touches. Lines intersecting it
+    /// render as raw source (markers visible); everything else hides markup.
+    public private(set) var activeParagraphRange = NSRange(location: 0, length: 0)
+
+    /// Set while the user composes marked text (IME) — styling pauses.
+    public weak var textView: NSTextView?
+
+    /// Escape hatch: disables hiding entirely (plain highlight mode).
+    public var livePreviewEnabled = true
+
     private var scan: BlockScan?
     private var signature: [Int] = []
+
+    /// Font used to collapse hidden runs to (near) zero width while keeping
+    /// character indices intact.
+    private static let collapsedFont = NSFont.systemFont(ofSize: 0.1)
 
     public init(theme: EditorTheme) {
         self.theme = theme
@@ -37,8 +55,28 @@ public final class IncrementalHighlighter: NSObject {
         storage.endEditing()
     }
 
+    /// Moves the active (raw-source) paragraph after a selection change and
+    /// restyles only the lines whose active state flipped.
+    public func updateActiveParagraph(_ storage: NSTextStorage, to newRange: NSRange) {
+        guard newRange != activeParagraphRange else { return }
+        let oldRange = activeParagraphRange
+        activeParagraphRange = newRange
+        guard let scan, storage.length > 0 else { return }
+
+        var spans: [ClosedRange<Int>] = []
+        if oldRange.location <= storage.length {
+            spans.append(scan.lineIndices(intersecting: oldRange))
+        }
+        spans.append(scan.lineIndices(intersecting: newRange))
+        for span in spans {
+            let clamped = min(span.lowerBound, scan.lines.count - 1)...min(span.upperBound, scan.lines.count - 1)
+            applyStyles(storage, text: storage.string as NSString, scan: scan, lineSpan: clamped)
+        }
+    }
+
     /// Called from didProcessEditing after a character edit.
     fileprivate func processEdit(_ storage: NSTextStorage, editedRange: NSRange) {
+        if textView?.hasMarkedText() == true { return } // don't disturb IME composition
         let text = storage.string as NSString
         let newScan = BlockScan.scan(text)
         let newSignature = newScan.structureSignature
@@ -104,7 +142,8 @@ public final class IncrementalHighlighter: NSObject {
             break
         }
 
-        for token in MarkdownScan.lineTokens(text, line: line) {
+        let tokens = MarkdownScan.lineTokens(text, line: line)
+        for token in tokens {
             apply(token, storage: storage)
         }
 
@@ -115,6 +154,46 @@ public final class IncrementalHighlighter: NSObject {
                 let range = NSRange(location: contentStart, length: end - contentStart)
                 storage.addAttribute(.foregroundColor, value: theme.mutedColor, range: range)
                 storage.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: range)
+            }
+        }
+
+        // Live Preview: on inactive lines, collapse the markup runs.
+        let isActive = !livePreviewEnabled
+            || NSIntersectionRange(line.range, activeParagraphRange).length > 0
+            || (activeParagraphRange.length == 0
+                && activeParagraphRange.location >= line.range.location
+                && activeParagraphRange.location <= line.range.location + line.range.length)
+        if !isActive {
+            hideMarkup(tokens: tokens, storage: storage)
+        }
+    }
+
+    /// Applies the collapsed rendering to every token that hides in preview.
+    private func hideMarkup(tokens: [Token], storage: NSTextStorage) {
+        func hide(_ range: NSRange) {
+            storage.addAttribute(.font, value: Self.collapsedFont, range: range)
+            storage.addAttribute(.foregroundColor, value: NSColor.clear, range: range)
+            storage.addAttribute(.noietsHidden, value: true, range: range)
+        }
+
+        for (index, token) in tokens.enumerated() {
+            if token.kind.hiddenInPreview {
+                hide(token.range)
+                continue
+            }
+            switch token.kind {
+            case .linkURL:
+                // Hide the URL of [text](url) — but keep bare autolinks visible.
+                if index > 0, tokens[index - 1].kind == .linkBracket {
+                    hide(token.range)
+                }
+            case .wikiLinkTarget:
+                // [[target|alias]] shows only the alias.
+                if index + 2 < tokens.count, tokens[index + 2].kind == .wikiLinkAlias {
+                    hide(token.range)
+                }
+            default:
+                break
             }
         }
     }
