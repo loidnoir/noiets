@@ -56,6 +56,9 @@ enum SelfTest {
             if let editor = textViews.first {
                 out["livePreview"] = livePreviewChecks(editor)
             }
+            if let editorView = findEditorView(in: window) {
+                out["vim"] = vimChecks(editorView)
+            }
             if let outline = outlines.first {
                 out["sidebarRows"] = outline.numberOfRows
                 out["sidebarSelectedRow"] = outline.selectedRow
@@ -105,6 +108,70 @@ enum SelfTest {
         editor.moveDown(nil)
         result["caretAfterMoveDown"] = editor.selectedRange().location
 
+        return result
+    }
+
+    private static func findEditorView(in window: NSWindow) -> MarkdownEditorView? {
+        func walk(_ view: NSView) -> MarkdownEditorView? {
+            if let e = view as? MarkdownEditorView { return e }
+            for sub in view.subviews {
+                if let found = walk(sub) { return found }
+            }
+            return nil
+        }
+        guard let content = window.contentView else { return nil }
+        return walk(content)
+    }
+
+    /// Drives vim through real keyDown events on the actual text view —
+    /// exercises key routing, the engine, the undo pipeline, and live preview
+    /// in one pass. Detaches autosave first so test edits never reach disk.
+    private static func vimChecks(_ editorView: MarkdownEditorView) -> [String: Any] {
+        var result: [String: Any] = [:]
+        let tv = editorView.textView
+        let vim = editorView.vim
+        editorView.onTextChange = nil // IMPORTANT: keep test edits off disk
+        editorView.window?.makeFirstResponder(tv)
+
+        func key(_ ch: String, keyCode: UInt16 = 0, control: Bool = false) {
+            guard let event = NSEvent.keyEvent(
+                with: .keyDown, location: .zero,
+                modifierFlags: control ? [.control] : [],
+                timestamp: 0, windowNumber: tv.window?.windowNumber ?? 0, context: nil,
+                characters: ch, charactersIgnoringModifiers: ch,
+                isARepeat: false, keyCode: keyCode
+            ) else { return }
+            tv.keyDown(with: event)
+        }
+        func keys(_ s: String) { s.forEach { key(String($0)) } }
+        func esc() { key("\u{1B}", keyCode: 53) }
+        func line1() -> String { tv.string.components(separatedBy: "\n").first ?? "" }
+
+        result["startsInNormal"] = vim.mode == .normal
+
+        editorView.load(text: "alpha beta gamma\nsecond line here\n")
+        keys("dw")
+        result["afterDW"] = line1() // "beta gamma"
+        keys("u")
+        result["afterUndo"] = line1() // "alpha beta gamma"
+        key("r", control: true)
+        result["afterRedo"] = line1() // "beta gamma"
+
+        keys("ciw")
+        result["modeAfterCIW"] = vim.mode.label
+        tv.insertText("X", replacementRange: tv.selectedRange())
+        esc()
+        result["afterCIWTyped"] = line1() // "X gamma"
+        keys("w.")
+        result["afterDotRepeat"] = line1() // "X X"
+
+        keys("Vd")
+        result["afterVisualLineDelete"] = line1() // "second line here"
+
+        keys("/here\n")
+        result["searchLandedAt"] = tv.selectedRange().location // 12
+
+        editorView.load(text: "restored\n")
         return result
     }
 }

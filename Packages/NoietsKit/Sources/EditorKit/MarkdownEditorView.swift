@@ -1,13 +1,17 @@
 import AppKit
+import VimKit
 
 /// The complete markdown editing surface: scroll view + TextKit 2 text view,
-/// plus (as milestones land) the highlighter, live-preview controller, and vim
-/// engine wiring. The app shell embeds this and stays out of editor internals.
+/// highlighter/live-preview, and the vim engine with its mode indicator. The
+/// app shell embeds this and stays out of editor internals.
 public final class MarkdownEditorView: NSView {
     public let theme: EditorTheme
     public let textView: NoietsTextView
     public let scrollView = NSScrollView()
     public let highlighter: IncrementalHighlighter
+    public let vim = VimEngine()
+
+    private let modePill = NSTextField(labelWithString: "")
 
     /// Fired on every text change (typing, paste, vim edit). Used for autosave.
     public var onTextChange: (() -> Void)?
@@ -52,6 +56,47 @@ public final class MarkdownEditorView: NSView {
             scrollView.leadingAnchor.constraint(equalTo: leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: trailingAnchor),
         ])
+
+        setupVim()
+    }
+
+    // MARK: Vim
+
+    private func setupVim() {
+        vim.target = textView
+        textView.vim = vim
+
+        modePill.font = .monospacedSystemFont(ofSize: 10, weight: .semibold)
+        modePill.textColor = theme.mutedColor
+        modePill.alignment = .center
+        modePill.wantsLayer = true
+        modePill.layer?.cornerRadius = 4
+        modePill.layer?.backgroundColor = theme.codeBackground.cgColor
+        modePill.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(modePill)
+        NSLayoutConstraint.activate([
+            modePill.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
+            modePill.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -10),
+            modePill.widthAnchor.constraint(greaterThanOrEqualToConstant: 64),
+            modePill.heightAnchor.constraint(equalToConstant: 18),
+        ])
+
+        vim.onModeChange = { [weak self] mode in
+            self?.refreshPill(mode: mode, status: nil)
+        }
+        vim.onStatus = { [weak self] status in
+            self?.refreshPill(mode: nil, status: status)
+        }
+        refreshPill(mode: vim.mode, status: "")
+    }
+
+    private var lastStatus = ""
+
+    private func refreshPill(mode: VimMode?, status: String?) {
+        if let status { lastStatus = status }
+        let m = mode ?? vim.mode
+        let text = lastStatus.isEmpty ? m.label : "\(m.label)  \(lastStatus)"
+        modePill.stringValue = "  \(text)  "
     }
 
     // MARK: Content
@@ -60,6 +105,7 @@ public final class MarkdownEditorView: NSView {
 
     /// Replaces the buffer with a freshly loaded note (resets undo history).
     public func load(text: String) {
+        vim.reset()
         textView.string = text // triggers didProcessEditing → full style pass
         textView.undoManager?.removeAllActions()
         textView.setSelectedRange(NSRange(location: 0, length: 0))

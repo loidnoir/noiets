@@ -22,5 +22,6 @@ let package = Package(
         .target(name: "IndexKit", dependencies: ["SharedModel", "VaultStore", "MarkdownKit"]),
         .target(name: "EditorKit", dependencies: ["SharedModel", "MarkdownKit", "VimKit", "RenderKit"]),
         .testTarget(name: "MarkdownKitTests", dependencies: ["MarkdownKit"]),
+        .testTarget(name: "VimKitTests", dependencies: ["VimKit"]),
     ]
 )
