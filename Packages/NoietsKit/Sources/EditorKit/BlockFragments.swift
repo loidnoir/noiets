@@ -213,11 +213,16 @@ final class QuoteBarFragment: NSTextLayoutFragment {
             .size(withAttributes: [.font: NSFont.systemFont(ofSize: theme.baseFontSize,
                                                             weight: .bold)]).width / 2
         let padding = textLayoutManager?.textContainer?.lineFragmentPadding ?? 5
+        // Wrapped quotes span several visual lines — run the bar from the
+        // first line's caps to the last line's descenders.
         let firstLine = textLineFragments.first
-        let baseline = (firstLine?.typographicBounds.origin.y ?? 0)
+        let lastLine = textLineFragments.last
+        let firstBaseline = (firstLine?.typographicBounds.origin.y ?? 0)
             + (firstLine?.glyphOrigin.y ?? font.ascender)
-        let top = baseline - font.capHeight - 1.5
-        let bottom = baseline - font.descender + 1.5 // descender is negative
+        let lastBaseline = (lastLine?.typographicBounds.origin.y ?? 0)
+            + (lastLine?.glyphOrigin.y ?? font.ascender)
+        let top = firstBaseline - font.capHeight - 1.5
+        let bottom = lastBaseline - font.descender + 1.5 // descender is negative
         let bar = CGRect(x: point.x - layoutFragmentFrame.minX + padding + dashHalf - 1.5,
                          y: point.y + top, width: 3, height: bottom - top)
         context.addPath(CGPath(roundedRect: bar, cornerWidth: 1.5, cornerHeight: 1.5,
