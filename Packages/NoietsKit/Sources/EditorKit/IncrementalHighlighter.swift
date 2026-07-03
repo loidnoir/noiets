@@ -165,11 +165,23 @@ public final class IncrementalHighlighter: NSObject {
 
         for index in lineSpan {
             let line = scan.lines[index]
-            styleLine(storage, text: text, line: line)
+            let opensCodeBlock: Bool
+            if case .fenceDelimiter = line.kind {
+                opensCodeBlock = index == 0 || {
+                    switch scan.lines[index - 1].kind {
+                    case .code, .fenceDelimiter: return false
+                    default: return true
+                    }
+                }()
+            } else {
+                opensCodeBlock = false
+            }
+            styleLine(storage, text: text, line: line, opensCodeBlock: opensCodeBlock)
         }
     }
 
-    private func styleLine(_ storage: NSTextStorage, text: NSString, line: BlockScan.Line) {
+    private func styleLine(_ storage: NSTextStorage, text: NSString, line: BlockScan.Line,
+                           opensCodeBlock: Bool = false) {
         // Line-level treatments first.
         switch line.kind {
         case .heading(let level, _, _):
@@ -178,6 +190,22 @@ public final class IncrementalHighlighter: NSObject {
         case .code, .fenceDelimiter, .tableRow, .tableDelimiterRow, .frontmatterContent, .frontmatterDelimiter:
             if line.contentRange.length > 0 {
                 storage.addAttribute(.font, value: theme.monoFont, range: line.contentRange)
+            }
+            // Code lines indent inside the band; the opening fence adds
+            // breathing room above the language label (the spacing lands
+            // inside the layout fragment, so the band covers it).
+            switch line.kind {
+            case .code, .fenceDelimiter:
+                let style = (theme.defaultParagraphStyle.mutableCopy() as? NSMutableParagraphStyle)
+                    ?? NSMutableParagraphStyle()
+                style.firstLineHeadIndent = 10
+                style.headIndent = 10
+                if opensCodeBlock {
+                    style.paragraphSpacingBefore = 12
+                }
+                storage.addAttribute(.paragraphStyle, value: style, range: line.range)
+            default:
+                break
             }
         case .blockquote:
             // Quotes read quieter than body text.

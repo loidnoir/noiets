@@ -33,8 +33,11 @@ final class CodeBandFragment: NSTextLayoutFragment {
     }
 
     private var bandRect: CGRect {
-        // Band spans the writing column only — never past it to the window edge.
-        CGRect(x: -8, y: 0, width: columnWidth + 16, height: layoutFragmentFrame.height)
+        // Band edges sit on the text column, flush with the other components;
+        // the code text itself indents inside (paragraph head indent).
+        let pad = textLayoutManager?.textContainer?.lineFragmentPadding ?? 5
+        return CGRect(x: pad, y: 0, width: columnWidth - pad * 2,
+                      height: layoutFragmentFrame.height)
     }
 
     override func draw(at point: CGPoint, in context: CGContext) {
