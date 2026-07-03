@@ -169,11 +169,18 @@ final class MainWindowController: NSWindowController {
     }
 
     /// Dev-only: NOIETS_OPEN=<link target> opens a note by name;
-    /// NOIETS_SCROLL_TO=<needle> scrolls the editor to the first occurrence.
+    /// NOIETS_SCROLL_TO=<needle> scrolls the editor to the first occurrence;
+    /// NOIETS_SHOW=search|recent|trash opens a fixed sidebar view.
     private func applyDevHooks() {
         let env = ProcessInfo.processInfo.environment
         if let name = env["NOIETS_OPEN"], !name.isEmpty {
             openWikiLink(name)
+        }
+        switch env["NOIETS_SHOW"] {
+        case "search": showFixed(.search)
+        case "recent": showFixed(.recent)
+        case "trash": showFixed(.trash)
+        default: break
         }
         if let needle = env["NOIETS_SCROLL_TO"], !needle.isEmpty {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in

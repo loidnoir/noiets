@@ -226,9 +226,12 @@ extension TrashViewController: NSTableViewDataSource, NSTableViewDelegate {
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         let url = items[row]
+        let isFolder = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
         return SidebarCellView.make(
             in: tableView,
-            title: url.lastPathComponent, symbol: "doc.text", isFolder: false
+            title: url.lastPathComponent, symbol: nil, isFolder: isFolder,
+            image: isFolder ? AppIcons.folder(size: 15) : AppIcons.document(size: 15),
+            prominent: false
         )
     }
 }

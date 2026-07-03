@@ -294,25 +294,43 @@ extension SearchViewController: NSTableViewDataSource, NSTableViewDelegate {
     }
 }
 
-/// Two-line row: note title + muted snippet/path.
+/// Two-line row: type icon + note title + muted snippet/path.
 private final class SearchHitCellView: NSTableCellView {
     static let reuseID = NSUserInterfaceItemIdentifier("SearchHitCell")
 
+    private let icon = NSImageView()
     private let title = NSTextField(labelWithString: "")
     private let detail = NSTextField(labelWithString: "")
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
+        icon.image = AppIcons.document(size: 15)
+        icon.contentTintColor = .secondaryLabelColor
         title.font = .systemFont(ofSize: 14, weight: .medium)
         title.lineBreakMode = .byTruncatingTail
         detail.font = .systemFont(ofSize: 12)
         detail.textColor = .secondaryLabelColor
         detail.lineBreakMode = .byTruncatingTail
+        // Long titles must truncate on one line — never wrap, never crush
+        // the icon out of the row.
+        title.maximumNumberOfLines = 1
+        detail.maximumNumberOfLines = 1
+        title.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        detail.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        NSLayoutConstraint.activate([
+            icon.widthAnchor.constraint(equalToConstant: 15),
+            icon.heightAnchor.constraint(equalToConstant: 15),
+        ])
 
-        let stack = NSStackView(views: [title, detail])
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 2
+        let text = NSStackView(views: [title, detail])
+        text.orientation = .vertical
+        text.alignment = .leading
+        text.spacing = 2
+
+        let stack = NSStackView(views: [icon, text])
+        stack.orientation = .horizontal
+        stack.alignment = .centerY
+        stack.spacing = 9
         stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
         NSLayoutConstraint.activate([

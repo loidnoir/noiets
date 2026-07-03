@@ -107,7 +107,9 @@ final class SidebarCellView: NSTableCellView {
         super.init(frame: frameRect)
         icon.contentTintColor = UITheme.sidebarSecondaryText
         icon.setContentHuggingPriority(.required, for: .horizontal)
+        icon.setContentCompressionResistancePriority(.required, for: .horizontal)
         label.lineBreakMode = .byTruncatingTail
+        label.maximumNumberOfLines = 1 // long names truncate with …, never wrap
         label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         stack.orientation = .horizontal
@@ -130,26 +132,33 @@ final class SidebarCellView: NSTableCellView {
         fatalError("init(coder:) is not supported")
     }
 
-    static func make(in tableView: NSTableView, title: String, symbol: String?, isFolder: Bool)
-        -> SidebarCellView
+    static func make(in tableView: NSTableView, title: String, symbol: String?, isFolder: Bool,
+                     image: NSImage? = nil, prominent: Bool? = nil) -> SidebarCellView
     {
         let cell =
             tableView.makeView(withIdentifier: reuseID, owner: nil) as? SidebarCellView
             ?? SidebarCellView(frame: .zero)
         cell.identifier = reuseID
-        cell.configure(title: title, symbol: symbol, isFolder: isFolder)
+        cell.configure(title: title, symbol: symbol, isFolder: isFolder,
+                       image: image, prominent: prominent)
         return cell
     }
 
-    private func configure(title: String, symbol: String?, isFolder: Bool) {
+    private func configure(title: String, symbol: String?, isFolder: Bool,
+                           image: NSImage?, prominent: Bool?) {
         label.stringValue = title
-        let hasIcon = symbol != nil
+        // Prominent rows (the fixed sidebar items) use the larger label; list
+        // rows keep the compact one even when they carry a type icon.
+        let isProminent = prominent ?? (symbol != nil || image != nil)
         label.font = .systemFont(
-            ofSize: hasIcon ? 15 : 13.5,
-            weight: hasIcon ? .medium : (isFolder ? .medium : .regular)
+            ofSize: isProminent ? 15 : 13.5,
+            weight: isProminent ? .medium : (isFolder ? .medium : .regular)
         )
         label.textColor = UITheme.sidebarPrimaryText
-        if let symbol {
+        if let image {
+            icon.image = image
+            icon.isHidden = false
+        } else if let symbol {
             let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .semibold)
             icon.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)?
                 .withSymbolConfiguration(config)
@@ -183,6 +192,7 @@ final class SidebarFolderCellView: NSTableCellView {
         label.font = .systemFont(ofSize: 15, weight: .medium)
         label.textColor = UITheme.sidebarPrimaryText
         label.lineBreakMode = .byTruncatingTail
+        label.maximumNumberOfLines = 1 // long names truncate with …, never wrap
         label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         stack.orientation = .horizontal
@@ -278,9 +288,11 @@ final class SidebarFolderCellView: NSTableCellView {
         showsChevron = isExpandable
         self.onToggle = onToggle
 
-        let folderConfig = NSImage.SymbolConfiguration(pointSize: 16, weight: .semibold)
-        icon.image = NSImage(systemSymbolName: "folder", accessibilityDescription: title)?
-            .withSymbolConfiguration(folderConfig)
+        icon.image = AppIcons.folder(size: 17) ?? {
+            let folderConfig = NSImage.SymbolConfiguration(pointSize: 16, weight: .semibold)
+            return NSImage(systemSymbolName: "folder", accessibilityDescription: title)?
+                .withSymbolConfiguration(folderConfig)
+        }()
 
         setExpanded(isExpanded)
         chevronButton.isEnabled = isExpandable
