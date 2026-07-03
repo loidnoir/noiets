@@ -197,19 +197,21 @@ final class QuoteBarFragment: NSTextLayoutFragment {
     override func draw(at point: CGPoint, in context: CGContext) {
         context.saveGState()
         // The fragment origin follows the paragraph indent, so anchor the bar
-        // to the bullet-dot column; center it on the text's full visual
-        // extent (caps to descenders). Mirrors theme.baseFont (MainActor).
+        // to the bullet-dot column; span exactly the text's visual extent
+        // (caps to descenders) off the real rendered baseline, so bar and
+        // text are centered on each other by construction.
         let font = NSFont.systemFont(ofSize: theme.baseFontSize)
         let dashHalf = ("-" as NSString)
             .size(withAttributes: [.font: NSFont.systemFont(ofSize: theme.baseFontSize,
                                                             weight: .bold)]).width / 2
         let padding = textLayoutManager?.textContainer?.lineFragmentPadding ?? 5
-        let capTop = font.ascender - font.capHeight
-        let glyphBottom = font.ascender - font.descender // descender is negative
-        let center = point.y + (capTop + glyphBottom) / 2
-        let height = layoutFragmentFrame.height - theme.lineSpacing - 2
+        let firstLine = textLineFragments.first
+        let baseline = (firstLine?.typographicBounds.origin.y ?? 0)
+            + (firstLine?.glyphOrigin.y ?? font.ascender)
+        let top = baseline - font.capHeight - 1.5
+        let bottom = baseline - font.descender + 1.5 // descender is negative
         let bar = CGRect(x: point.x - layoutFragmentFrame.minX + padding + dashHalf - 1.5,
-                         y: center - height / 2, width: 3, height: height)
+                         y: point.y + top, width: 3, height: bottom - top)
         context.addPath(CGPath(roundedRect: bar, cornerWidth: 1.5, cornerHeight: 1.5,
                                transform: nil))
         context.setFillColor(theme.mutedColor.withAlphaComponent(0.5).cgColor)
