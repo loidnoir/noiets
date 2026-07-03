@@ -285,6 +285,17 @@ enum SelfTest {
         result["gutterHiddenAfterReturn"] = !editorView.isLineNumberGutterActive
         result["colonWentToLine4"] = tv.selectedRange().location == 32 // "four"
 
+        // Wrapped rows count as lines: a soft-wrapped paragraph yields more
+        // visual rows than logical lines, and :2 lands INSIDE it (row 2).
+        let wrapProse = String(repeating: "count wrapped rows too ", count: 25)
+        editorView.load(text: wrapProse + "\ntail")
+        let rowCount = tv.visualRows().count
+        result["visualRowsExceedLogical"] = rowCount > 2
+        keys(":2")
+        key("\r", keyCode: 36)
+        let row2 = tv.selectedRange().location
+        result["colonUsesVisualRows"] = row2 > 0 && row2 < (wrapProse as NSString).length
+
         // ⌃d half-page scroll through the real key path.
         editorView.load(text: (1...80).map { "line \($0)" }.joined(separator: "\n"))
         guard let ctrlD = NSEvent.keyEvent(

@@ -897,8 +897,9 @@ public final class VimEngine {
             return true
         }
         if key.isReturn {
-            if let target, let line = Int(commandBuffer), line > 0 {
-                moveCaret(to: Motions.gotoLine(target.text, line: line, last: false))
+            if let target, let line = Int(commandBuffer), line > 0,
+               let location = target.characterLocation(ofVisualRow: line) {
+                moveCaret(to: location)
             }
             close()
             return true

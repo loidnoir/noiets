@@ -71,6 +71,10 @@ final class MockTarget: VimTextTarget {
 
     func visibleLineCount() -> Int { 20 }
 
+    func characterLocation(ofVisualRow row: Int) -> Int? {
+        Motions.gotoLine(text, line: row, last: false) // logical == visual headless
+    }
+
     /// Headless approximation of AppKit's visual movement: logical lines with
     /// a goal column that persists across consecutive vertical moves (and
     /// resets whenever the selection is set by any other path).

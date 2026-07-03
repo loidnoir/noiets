@@ -31,4 +31,8 @@ public protocol VimTextTarget: AnyObject {
     /// The editor delegates to native line movement; headless targets
     /// approximate with logical lines.
     func moveCaretVisually(lines: Int)
+
+    /// Character location of the 1-based visual row (`:N`). Wrapped rows
+    /// count individually; headless targets treat rows as logical lines.
+    func characterLocation(ofVisualRow row: Int) -> Int?
 }

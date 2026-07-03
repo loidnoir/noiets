@@ -221,6 +221,48 @@ extension NoietsTextView: VimTextTarget {
         super.setSelectedRanges(ranges, affinity: affinity, stillSelecting: stillSelecting)
     }
 
+    /// Every rendered (visual) row: character location + rect in view
+    /// coordinates. Wrapped rows count individually — this is what the
+    /// : gutter numbers and what :N jumps to, consistent with visual j/k.
+    /// Forces full layout; used only for deliberate, transient actions.
+    public func visualRows() -> [(location: Int, rect: CGRect)] {
+        guard let layoutManager = textLayoutManager,
+              let contentStorage = textContentStorage else { return [] }
+        var rows: [(Int, CGRect)] = []
+        let docStart = layoutManager.documentRange.location
+        layoutManager.enumerateTextLayoutFragments(
+            from: docStart,
+            options: [.ensuresLayout]
+        ) { fragment in
+            let origin = fragment.layoutFragmentFrame.origin
+            let fragmentStart = contentStorage.offset(
+                from: docStart, to: fragment.rangeInElement.location
+            )
+            for line in fragment.textLineFragments {
+                let rect = line.typographicBounds
+                    .offsetBy(dx: origin.x + self.textContainerInset.width,
+                              dy: origin.y + self.textContainerInset.height)
+                rows.append((fragmentStart + line.characterRange.location, rect))
+            }
+            return true
+        }
+        return rows
+    }
+
+    /// Character location for a 1-based visual row (clamped to the last row).
+    /// Rows that start a logical line land on their first non-blank, vim-style.
+    public func characterLocation(ofVisualRow row: Int) -> Int? {
+        let rows = visualRows()
+        guard !rows.isEmpty else { return nil }
+        let location = rows[min(max(row, 1), rows.count) - 1].location
+        let ns = string as NSString
+        guard ns.length > 0 else { return 0 }
+        if Motions.lineStart(ns, at: min(location, ns.length - 1)) == location {
+            return Motions.firstNonBlank(ns, at: location)
+        }
+        return location
+    }
+
     /// Caret rect in view coordinates.
     private func caretViewRect() -> NSRect? {
         guard let window else { return nil }
