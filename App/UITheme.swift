@@ -19,9 +19,11 @@ enum UITheme {
         light: NSColor(red: 0.13, green: 0.42, blue: 0.95, alpha: 0.22),
         dark: NSColor(red: 0.35, green: 0.58, blue: 1.0, alpha: 0.28)
     )
-    static let modeBarBackground = dynamic(
-        light: NSColor(white: 0.93, alpha: 1),
-        dark: NSColor(white: 0.19, alpha: 1)
+    /// Hairline separating panes and the bottom mode bar — a touch darker
+    /// than the sidebar background in both appearances.
+    static let paneSeparator = dynamic(
+        light: NSColor(white: 0.87, alpha: 1),
+        dark: NSColor(white: 0.075, alpha: 1)
     )
     static let sidebarPrimaryText = dynamic(
         light: NSColor(white: 0.22, alpha: 1),

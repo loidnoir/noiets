@@ -16,7 +16,8 @@ final class SidebarViewController: NSViewController {
 
     private let scrollView = NSScrollView()
     private let outlineView = SidebarOutlineView()
-    private let modeBar = ColorView(color: UITheme.modeBarBackground)
+    private let modeBar = ColorView(color: UITheme.sidebarBackground)
+    private let modeBarLine = ColorView(color: UITheme.paneSeparator)
     private let modeLabel = NSTextField(labelWithString: "NORMAL")
     private var suppressSelectionCallback = false
     private var suppressExpansionBookkeeping = false
@@ -125,16 +126,16 @@ final class SidebarViewController: NSViewController {
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(scrollView)
 
-        // Vim mode bar: pinned to the sidebar bottom, full width minus the
-        // same margins the rows use.
-        modeBar.wantsLayer = true
-        modeBar.layer?.cornerRadius = 7
+        // Vim mode bar: flat Things-style strip across the sidebar bottom,
+        // separated from the content by a hairline (no pill).
         modeBar.translatesAutoresizingMaskIntoConstraints = false
+        modeBarLine.translatesAutoresizingMaskIntoConstraints = false
         modeLabel.font = .monospacedSystemFont(ofSize: 10.5, weight: .bold)
         modeLabel.textColor = UITheme.sidebarSecondaryText
         modeLabel.alignment = .center
         modeLabel.lineBreakMode = .byTruncatingTail
         modeLabel.translatesAutoresizingMaskIntoConstraints = false
+        modeBar.addSubview(modeBarLine)
         modeBar.addSubview(modeLabel)
         view.addSubview(modeBar)
 
@@ -143,14 +144,20 @@ final class SidebarViewController: NSViewController {
             scrollView.topAnchor.constraint(
                 equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 10
             ),
-            scrollView.bottomAnchor.constraint(equalTo: modeBar.topAnchor, constant: -8),
+            scrollView.bottomAnchor.constraint(equalTo: modeBar.topAnchor),
             scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
 
-            modeBar.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 10),
-            modeBar.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -10),
-            modeBar.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -10),
-            modeBar.heightAnchor.constraint(equalToConstant: 26),
+            modeBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            modeBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            modeBar.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            modeBar.heightAnchor.constraint(equalToConstant: 32),
+
+            modeBarLine.topAnchor.constraint(equalTo: modeBar.topAnchor),
+            modeBarLine.leadingAnchor.constraint(equalTo: modeBar.leadingAnchor),
+            modeBarLine.trailingAnchor.constraint(equalTo: modeBar.trailingAnchor),
+            modeBarLine.heightAnchor.constraint(equalToConstant: 1),
+
             modeLabel.centerXAnchor.constraint(equalTo: modeBar.centerXAnchor),
             modeLabel.centerYAnchor.constraint(equalTo: modeBar.centerYAnchor),
             modeLabel.leadingAnchor.constraint(

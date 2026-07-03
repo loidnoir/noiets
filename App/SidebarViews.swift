@@ -32,11 +32,10 @@ private func repaintSelections(of table: NSTableView) {
     }
 }
 
-/// The seamless split view: panes meet with no drawn divider — the color
-/// change itself is the separation (resizing still works on the 1px seam).
+/// Split view with a quiet hairline divider matching the mode bar's outline.
 final class SeamlessSplitView: NSSplitView {
     override var dividerColor: NSColor {
-        .clear
+        UITheme.paneSeparator
     }
 }
 
