@@ -201,7 +201,9 @@ public final class IncrementalHighlighter: NSObject {
                 style.firstLineHeadIndent = 10
                 style.headIndent = 10
                 if opensCodeBlock {
-                    style.paragraphSpacingBefore = 16
+                    // 12pt inside the band + the band's 8pt outer top gap
+                    // (CodeBandFragment starts the rounded top that far down).
+                    style.paragraphSpacingBefore = 20
                 }
                 storage.addAttribute(.paragraphStyle, value: style, range: line.range)
             default:
