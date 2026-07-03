@@ -82,14 +82,17 @@ public final class IncrementalHighlighter: NSObject {
         }
     }
 
-    /// If the selection touches a table or a $$ math block, expand to the
-    /// whole run — those render as one unit and revert to source together.
+    /// If the selection touches a table, a $$ math block, or a code fence
+    /// block, expand to the whole run — those render as one unit and revert
+    /// to source together (fence backticks reappear while inside the block).
     private func expandRangeToTable(_ range: NSRange, text: NSString) -> NSRange {
         guard let scan, !scan.lines.isEmpty, text.length > 0 else { return range }
         let span = scan.lineIndices(intersecting: range)
         func isTable(_ i: Int) -> Bool {
             switch scan.lines[i].kind {
-            case .tableRow, .tableDelimiterRow, .mathDelimiter, .mathBlockContent: return true
+            case .tableRow, .tableDelimiterRow, .mathDelimiter, .mathBlockContent,
+                 .code, .fenceDelimiter:
+                return true
             default: return false
             }
         }
@@ -195,14 +198,22 @@ public final class IncrementalHighlighter: NSObject {
                 && activeParagraphRange.location >= line.range.location
                 && activeParagraphRange.location <= line.range.location + line.range.length)
         if !isActive {
-            hideMarkup(tokens: tokens, storage: storage, text: text)
+            // Math collapses only on lines whose fragment draws overlays
+            // (OverlayLineFragment); elsewhere it stays styled source.
+            let collapseMath: Bool
+            switch line.kind {
+            case .paragraph, .listItem: collapseMath = true
+            default: collapseMath = false
+            }
+            hideMarkup(tokens: tokens, storage: storage, text: text, collapseMath: collapseMath)
         }
     }
 
     /// Applies the collapsed rendering to every token that hides in preview,
     /// and makes links/tags clickable (inactive lines only — the active line
     /// is raw source where clicks should place the caret).
-    private func hideMarkup(tokens: [Token], storage: NSTextStorage, text: NSString) {
+    private func hideMarkup(tokens: [Token], storage: NSTextStorage, text: NSString,
+                            collapseMath: Bool) {
         func hide(_ range: NSRange) {
             storage.addAttribute(.font, value: Self.collapsedFont, range: range)
             storage.addAttribute(.foregroundColor, value: NSColor.clear, range: range)
@@ -248,11 +259,28 @@ public final class IncrementalHighlighter: NSObject {
                 }
             case .tagName:
                 link(token.range, noiets("tag", text.substring(with: token.range)))
+            case .listMarker(ordered: false):
+                // "- " collapses; a round dot draws in the reserved gap.
+                hide(token.range)
+                let bold = NSFont.systemFont(ofSize: theme.baseFontSize, weight: .bold)
+                let marker = text.substring(with: token.range) as NSString
+                let kern = max(0, marker.size(withAttributes: [.font: bold]).width
+                    - marker.size(withAttributes: [.font: Self.collapsedFont]).width)
+                storage.addAttribute(.kern, value: kern,
+                                     range: NSRange(location: token.range.location + token.range.length - 1,
+                                                    length: 1))
+            case .blockquoteMarker:
+                hide(token.range) // the quote bar carries the meaning
+            case .codeFenceDelimiter:
+                // The backticks hide; the language name stays as the block's
+                // label. Entering the block reveals the raw fences.
+                hide(NSRange(location: token.range.location,
+                             length: min(3, token.range.length)))
             case .mathContent(let display):
                 // Inline $…$ / $$…$$: collapse the whole span and reserve the
                 // typeset image's width with a kern on the closing marker; the
-                // InlineMathFragment draws the image over the gap.
-                guard index > 0, index + 1 < tokens.count,
+                // OverlayLineFragment draws the image over the gap.
+                guard collapseMath, index > 0, index + 1 < tokens.count,
                       tokens[index - 1].kind == .mathMarker,
                       tokens[index + 1].kind == .mathMarker,
                       let image = InlineMath.image(latex: text.substring(with: token.range),
@@ -300,7 +328,7 @@ public final class IncrementalHighlighter: NSObject {
 
         case .inlineCode:
             storage.addAttribute(.font, value: theme.monoFont, range: range)
-            storage.addAttribute(.foregroundColor, value: theme.codeColor, range: range)
+            storage.addAttribute(.foregroundColor, value: theme.mutedColor, range: range)
             storage.addAttribute(.backgroundColor, value: theme.codeBackground, range: range)
         case .inlineCodeMarker:
             storage.addAttribute(.font, value: theme.monoFont, range: range)

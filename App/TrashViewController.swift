@@ -82,7 +82,7 @@ final class TrashViewController: NSViewController {
         items = (try? fm.contentsOfDirectory(
             at: session.vault.trashURL,
             includingPropertiesForKeys: [.contentModificationDateKey],
-            options: []
+            options: [.skipsHiddenFiles] // keeps the .origins.json sidecar out
         ).sorted {
             let a = (try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
             let b = (try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
@@ -118,18 +118,9 @@ final class TrashViewController: NSViewController {
 
     private func restore(row: Int) {
         guard row >= 0, row < items.count else { return }
-        let url = items[row]
-        var dest = session.vault.rootURL.appendingPathComponent(url.lastPathComponent)
-        let fm = FileManager.default
-        var counter = 2
-        while fm.fileExists(atPath: dest.path) {
-            let base = url.deletingPathExtension().lastPathComponent
-            let ext = url.pathExtension
-            let name = ext.isEmpty ? "\(base) \(counter)" : "\(base) \(counter).\(ext)"
-            dest = session.vault.rootURL.appendingPathComponent(name)
-            counter += 1
-        }
-        try? fm.moveItem(at: url, to: dest)
+        // Back to the folder it was deleted from, when it still exists;
+        // otherwise the vault root.
+        try? NoteIO.restoreFromTrash(items[row], vault: session.vault)
         session.rescan()
         reload()
         selectRow(min(row, items.count - 1))
@@ -147,6 +138,7 @@ final class TrashViewController: NSViewController {
             guard let self else { return }
             if response == .alertFirstButtonReturn {
                 try? FileManager.default.removeItem(at: url)
+                TrashOrigins.forget(name: url.lastPathComponent, vault: self.session.vault)
                 self.reload()
                 self.selectRow(min(row, self.items.count - 1))
             }

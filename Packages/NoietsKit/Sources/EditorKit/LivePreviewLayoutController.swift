@@ -28,7 +28,7 @@ public final class LivePreviewLayoutController: NSObject {
         case code
         case image(path: String)
         case math(latex: String)
-        case inlineMath(spans: [InlineMathFragment.MathSpan])
+        case overlays(spans: [OverlayLineFragment.Span])
         case tableRow(cells: [String], isHeader: Bool, columns: [CGFloat])
         case tableDelimiter
         case quote
@@ -84,10 +84,14 @@ public final class LivePreviewLayoutController: NSObject {
             let cells = Self.cells(of: text.substring(with: line.contentRange))
             let (columns, headerIndex) = tableGeometry(for: lineIndex, scan: scan, text: text)
             return .tableRow(cells: cells, isHeader: lineIndex == headerIndex, columns: columns)
-        case .listItem where !active:
+        case .listItem(let markerRange, let ordered, _, _) where !active:
             let tokens = MarkdownScan.lineTokens(text, line: line)
-            let spans = inlineMathSpans(tokens: tokens, text: text, base: line.range.location)
-            return spans.isEmpty ? .plain : .inlineMath(spans: spans)
+            var spans = inlineMathSpans(tokens: tokens, text: text, base: line.range.location)
+            if !ordered {
+                spans.insert(.init(relativeLocation: markerRange.location - line.range.location,
+                                   kind: .bullet), at: 0)
+            }
+            return spans.isEmpty ? .plain : .overlays(spans: spans)
         case .paragraph where !active:
             // Obsidian-style image embed on its own line: ![[image.png]]
             let trimmedLine = text.substring(with: line.contentRange)
@@ -124,7 +128,7 @@ public final class LivePreviewLayoutController: NSObject {
             // Math mixed into the text: typeset inline over the collapsed spans.
             let spans = inlineMathSpans(tokens: tokens, text: text, base: line.range.location)
             if !spans.isEmpty {
-                return .inlineMath(spans: spans)
+                return .overlays(spans: spans)
             }
             return .plain
         default:
@@ -137,8 +141,8 @@ public final class LivePreviewLayoutController: NSObject {
     /// rule — a span appears here iff its width was reserved there.
     private func inlineMathSpans(
         tokens: [Token], text: NSString, base: Int
-    ) -> [InlineMathFragment.MathSpan] {
-        var spans: [InlineMathFragment.MathSpan] = []
+    ) -> [OverlayLineFragment.Span] {
+        var spans: [OverlayLineFragment.Span] = []
         for (i, token) in tokens.enumerated() {
             guard case .mathContent(let display) = token.kind,
                   i > 0, i + 1 < tokens.count,
@@ -147,7 +151,8 @@ public final class LivePreviewLayoutController: NSObject {
                   let image = InlineMath.image(latex: text.substring(with: token.range),
                                                display: display, theme: theme)
             else { continue }
-            spans.append(.init(relativeLocation: tokens[i - 1].range.location - base, image: image))
+            spans.append(.init(relativeLocation: tokens[i - 1].range.location - base,
+                               kind: .image(image)))
         }
         return spans
     }
@@ -235,8 +240,9 @@ extension LivePreviewLayoutController: @preconcurrency NSTextLayoutManagerDelega
                                          theme: theme, image: image, isMath: true)
             }
             return standard
-        case .inlineMath(let spans):
-            return InlineMathFragment(textElement: textElement, range: elementRange, spans: spans)
+        case .overlays(let spans):
+            return OverlayLineFragment(textElement: textElement, range: elementRange,
+                                       theme: theme, spans: spans)
         case .tableRow(let cells, let isHeader, let columns):
             return TableRowFragment(textElement: textElement, range: elementRange, theme: theme,
                                     cells: cells, isHeader: isHeader, columns: columns)

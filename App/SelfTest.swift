@@ -25,6 +25,36 @@ enum SelfTest {
         }
     }
 
+    /// Trash → restore round-trip: back to the origin folder while it exists,
+    /// vault root once it is gone.
+    private static func trashRestoreChecks(_ session: VaultSession) -> [String: Any] {
+        var result: [String: Any] = [:]
+        let fm = FileManager.default
+        let vault = session.vault
+        let sub = vault.rootURL.appendingPathComponent("RestoreProbe", isDirectory: true)
+        do {
+            try fm.createDirectory(at: sub, withIntermediateDirectories: true)
+            let a = try NoteIO.createNote(in: sub, baseName: "RestoreA")
+            let b = try NoteIO.createNote(in: sub, baseName: "RestoreB")
+            let trashedA = try NoteIO.moveToTrash(a, vault: vault)
+            let trashedB = try NoteIO.moveToTrash(b, vault: vault)
+
+            let backA = try NoteIO.restoreFromTrash(trashedA, vault: vault)
+            result["toOrigin"] = backA.deletingLastPathComponent().standardizedFileURL
+                == sub.standardizedFileURL ? "PASS" : "FAIL: \(backA.path)"
+
+            try fm.removeItem(at: sub) // origin gone → root fallback
+            let backB = try NoteIO.restoreFromTrash(trashedB, vault: vault)
+            result["missingDirToRoot"] = backB.deletingLastPathComponent().standardizedFileURL
+                == vault.rootURL.standardizedFileURL ? "PASS" : "FAIL: \(backB.path)"
+            try? fm.removeItem(at: backB)
+        } catch {
+            result["error"] = "FAIL: \(error)"
+        }
+        try? fm.removeItem(at: sub)
+        return result
+    }
+
     private static let remoteProbeURL =
         "https://www.google.com/images/branding/googlelogo/2x/googlelogo_color_272x92dp.png"
 
@@ -76,6 +106,7 @@ enum SelfTest {
             }
             if let session = session {
                 out["index"] = indexChecks(session)
+                out["trashRestore"] = trashRestoreChecks(session)
             }
             if ProcessInfo.processInfo.environment["NOIETS_PERF"] == "1",
                let editorView = findEditorView(in: window), let session = session {
