@@ -74,6 +74,20 @@ public final class NoietsTextView: NSTextView {
     /// Returns true when the paste was handled as an image embed.
     public var onPasteImage: (() -> Bool)?
 
+    /// Double-click hook (image lines open externally). Returns true if handled.
+    public var onDoubleClick: ((Int) -> Bool)?
+
+    public override func mouseDown(with event: NSEvent) {
+        if event.clickCount == 2, let onDoubleClick {
+            let point = convert(event.locationInWindow, from: nil)
+            let index = characterIndexForInsertion(at: point)
+            if index >= 0, onDoubleClick(index) {
+                return
+            }
+        }
+        super.mouseDown(with: event)
+    }
+
     public override func paste(_ sender: Any?) {
         if let onPasteImage, onPasteImage() {
             return

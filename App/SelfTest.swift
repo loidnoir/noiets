@@ -93,6 +93,7 @@ enum SelfTest {
             }
             if let wc = window.windowController as? MainWindowController,
                let editorView = findEditorView(in: window) {
+                out["images"] = imageResolutionChecks(wc, editorView)
                 out["paneNav"] = paneNavChecks(wc, editorView, window: window)
             }
             if let outline = outlines.first {
@@ -408,6 +409,51 @@ enum SelfTest {
         result["completionVisible"] = editorView.isWikiCompletionActive
         key("\r", keyCode: 36)
         result["afterCompletion"] = tv.string
+        return result
+    }
+
+    /// Real-vault image layouts: next to the note (markdown-relative) and in
+    /// an arbitrary folder referenced by bare name (Obsidian attachments).
+    private static func imageResolutionChecks(
+        _ wc: MainWindowController,
+        _ editorView: MarkdownEditorView
+    ) -> [String: Any] {
+        var result: [String: Any] = [:]
+        let root = wc.session.vault.rootURL
+        let fm = FileManager.default
+
+        func tinyPNG() -> Data? {
+            let image = NSImage(size: NSSize(width: 4, height: 4))
+            image.lockFocus()
+            NSColor.systemBlue.setFill()
+            NSRect(x: 0, y: 0, width: 4, height: 4).fill()
+            image.unlockFocus()
+            guard let tiff = image.tiffRepresentation,
+                  let rep = NSBitmapImageRep(data: tiff) else { return nil }
+            return rep.representation(using: .png, properties: [:])
+        }
+        guard let png = tinyPNG() else { return ["error": "no png"] }
+
+        let sub = root.appendingPathComponent("ImgSub", isDirectory: true)
+        let media = root.appendingPathComponent("Media", isDirectory: true)
+        try? fm.createDirectory(at: sub, withIntermediateDirectories: true)
+        try? fm.createDirectory(at: media, withIntermediateDirectories: true)
+        try? png.write(to: sub.appendingPathComponent("local.png"))
+        try? png.write(to: media.appendingPathComponent("deep.png"))
+        let note = sub.appendingPathComponent("imgnote.md")
+        try? "![](local.png)\n\n![[deep.png]]\n".data(using: .utf8)?
+            .write(to: note)
+        wc.session.rescan()
+        wc.open(noteAt: note) // sets the provider's noteFolderURL
+
+        guard let provider = editorView.layoutController?.imageProvider else {
+            return ["error": "no provider"]
+        }
+        provider.invalidate() // fresh filename index including the fixtures
+        result["noteRelativeResolves"] = provider.resolveFileURL(forPath: "local.png") != nil
+        result["vaultSearchResolves"] = provider.resolveFileURL(forPath: "deep.png") != nil
+        result["noteRelativeRenders"] = provider.image(forPath: "local.png") != nil
+        result["vaultSearchRenders"] = provider.image(forPath: "deep.png") != nil
         return result
     }
 

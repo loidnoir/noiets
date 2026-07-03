@@ -186,6 +186,7 @@ final class MainWindowController: NSWindowController {
         }
         session.noteOpened(url)
         hostVC.show(editorVC)
+        editorVC.editor.noteFolderURL = url.deletingLastPathComponent()
         editorVC.display(text: text)
         window?.title = url.deletingPathExtension().lastPathComponent
         editorVC.focusEditor()

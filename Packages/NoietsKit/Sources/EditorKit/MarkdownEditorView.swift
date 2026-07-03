@@ -22,6 +22,11 @@ public final class MarkdownEditorView: NSView {
         didSet { layoutController?.imageProvider.rootURL = resourceRoot }
     }
 
+    /// Folder of the open note — markdown-relative image paths resolve here.
+    public var noteFolderURL: URL? {
+        didSet { layoutController?.imageProvider.noteFolderURL = noteFolderURL }
+    }
+
     /// Block caret drawn in normal/visual mode (insert uses the native
     /// blinking bar).
     private let blockCaret = CaretBlockView()
@@ -105,6 +110,9 @@ public final class MarkdownEditorView: NSView {
         }
         textView.onPasteImage = { [weak self] in
             self?.pasteImageFromClipboard() ?? false
+        }
+        textView.onDoubleClick = { [weak self] index in
+            self?.openImageIfPresent(onLineAt: index) ?? false
         }
 
         scrollView.documentView = textView
@@ -404,9 +412,8 @@ extension MarkdownEditorView: NSTextViewDelegate {
     // MARK: Link routing
 
     public func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
-        guard let urlString = (link as? String) ?? (link as? URL)?.absoluteString,
-              let url = URL(string: urlString) else { return false }
-        if url.scheme == "noiets" {
+        guard let urlString = (link as? String) ?? (link as? URL)?.absoluteString else { return false }
+        if let url = URL(string: urlString), url.scheme == "noiets" {
             let value = url.path.dropFirst().removingPercentEncoding ?? String(url.path.dropFirst())
             switch url.host {
             case "open":
@@ -418,7 +425,51 @@ extension MarkdownEditorView: NSTextViewDelegate {
             }
             return true
         }
-        return false // http(s) etc → system default handling
+        if urlString.hasPrefix("http://") || urlString.hasPrefix("https://") {
+            if let url = URL(string: urlString) {
+                NSWorkspace.shared.open(url)
+                return true
+            }
+            return false
+        }
+        // Anything else is a vault-relative file reference (image paths,
+        // ![](assets/x.png) …): resolve it and open with the system viewer.
+        if let file = layoutController?.imageProvider.resolveFileURL(forPath: urlString) {
+            NSWorkspace.shared.open(file)
+            return true
+        }
+        return false
+    }
+
+    /// Double-clicking a rendered image (or its source line) opens the file
+    /// in the system viewer.
+    func openImageIfPresent(onLineAt charIndex: Int) -> Bool {
+        let ns = textView.string as NSString
+        guard ns.length > 0 else { return false }
+        let line = ns.lineRange(for: NSRange(location: min(charIndex, ns.length - 1), length: 0))
+        let content = ns.substring(with: line).trimmingCharacters(in: .whitespacesAndNewlines)
+
+        var path: String?
+        if content.hasPrefix("![["), content.hasSuffix("]]") {
+            path = String(content.dropFirst(3).dropLast(2))
+        } else if content.hasPrefix("!["),
+                  let open = content.range(of: "]("), content.hasSuffix(")") {
+            path = String(content[open.upperBound..<content.index(before: content.endIndex)])
+        }
+        guard let path else { return false }
+        let trimmedPath = path.trimmingCharacters(in: .whitespaces)
+        if trimmedPath.hasPrefix("http://") || trimmedPath.hasPrefix("https://") {
+            if let url = URL(string: trimmedPath) {
+                NSWorkspace.shared.open(url)
+                return true
+            }
+            return false
+        }
+        if let file = layoutController?.imageProvider.resolveFileURL(forPath: trimmedPath) {
+            NSWorkspace.shared.open(file)
+            return true
+        }
+        return false
     }
 
     // MARK: [[ autocompletion
