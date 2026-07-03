@@ -6,10 +6,14 @@ import VaultStore
 @MainActor
 final class TrashViewController: NSViewController {
     private let session: VaultSession
-    private let tableView = NSTableView()
+    private let tableView = VimTableView()
     private let headerLabel = NSTextField(labelWithString: "Trash")
     private let emptyLabel = NSTextField(labelWithString: "Trash is empty")
     private var items: [URL] = []
+    private var pendingKey: Character?
+
+    /// Esc / ⌃h → back to the sidebar tree.
+    var onFocusSidebar: (() -> Void)?
 
     init(session: VaultSession) {
         self.session = session
@@ -43,6 +47,9 @@ final class TrashViewController: NSViewController {
         tableView.dataSource = self
         tableView.delegate = self
         tableView.menu = buildMenu()
+        tableView.onKey = { [weak self] event in
+            self?.handleListKey(event) ?? false
+        }
 
         let scrollView = NSScrollView()
         scrollView.documentView = tableView
@@ -95,8 +102,16 @@ final class TrashViewController: NSViewController {
     }
 
     @objc private func restoreClicked() {
-        guard tableView.clickedRow >= 0, tableView.clickedRow < items.count else { return }
-        let url = items[tableView.clickedRow]
+        restore(row: tableView.clickedRow)
+    }
+
+    @objc private func deleteClicked() {
+        confirmDelete(row: tableView.clickedRow)
+    }
+
+    private func restore(row: Int) {
+        guard row >= 0, row < items.count else { return }
+        let url = items[row]
         var dest = session.vault.rootURL.appendingPathComponent(url.lastPathComponent)
         let fm = FileManager.default
         var counter = 2
@@ -110,12 +125,85 @@ final class TrashViewController: NSViewController {
         try? fm.moveItem(at: url, to: dest)
         session.rescan()
         reload()
+        selectRow(min(row, items.count - 1))
     }
 
-    @objc private func deleteClicked() {
-        guard tableView.clickedRow >= 0, tableView.clickedRow < items.count else { return }
-        try? FileManager.default.removeItem(at: items[tableView.clickedRow])
-        reload()
+    private func confirmDelete(row: Int) {
+        guard row >= 0, row < items.count, let window = view.window else { return }
+        let url = items[row]
+        let alert = NSAlert()
+        alert.messageText = "Delete “\(url.lastPathComponent)” permanently?"
+        alert.informativeText = "This cannot be undone."
+        alert.addButton(withTitle: "Delete Permanently")
+        alert.addButton(withTitle: "Cancel")
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard let self else { return }
+            if response == .alertFirstButtonReturn {
+                try? FileManager.default.removeItem(at: url)
+                self.reload()
+                self.selectRow(min(row, self.items.count - 1))
+            }
+            self.focusList()
+        }
+    }
+
+    // MARK: Keyboard (vim list navigation; Enter restores, dd deletes)
+
+    func focusList() {
+        _ = view
+        view.window?.makeFirstResponder(tableView)
+        if tableView.selectedRow < 0, !items.isEmpty {
+            selectRow(0)
+        }
+    }
+
+    private func selectRow(_ row: Int) {
+        guard !items.isEmpty else { return }
+        let clamped = min(max(row, 0), items.count - 1)
+        tableView.selectRowIndexes(IndexSet(integer: clamped), byExtendingSelection: false)
+        tableView.scrollRowToVisible(clamped)
+    }
+
+    private func handleListKey(_ event: NSEvent) -> Bool {
+        if event.modifierFlags.contains(.control) {
+            if event.charactersIgnoringModifiers == "h" {
+                onFocusSidebar?()
+                return true
+            }
+            return false
+        }
+        if event.keyCode == 53 { // esc
+            pendingKey = nil
+            onFocusSidebar?()
+            return true
+        }
+        if event.keyCode == 36 || event.keyCode == 76 { // return = restore
+            restore(row: tableView.selectedRow)
+            return true
+        }
+        guard let ch = event.charactersIgnoringModifiers?.first else { return false }
+
+        if let pending = pendingKey {
+            pendingKey = nil
+            if pending == "d", ch == "d" {
+                confirmDelete(row: tableView.selectedRow)
+                return true
+            }
+            if pending == "g", ch == "g" {
+                selectRow(0)
+                return true
+            }
+        }
+
+        switch ch {
+        case "j": selectRow(tableView.selectedRow + 1)
+        case "k": selectRow(tableView.selectedRow - 1)
+        case "G": selectRow(items.count - 1)
+        case "g", "d": pendingKey = ch
+        case "r": restore(row: tableView.selectedRow)
+        default: return false
+        }
+        return true
     }
 }
 

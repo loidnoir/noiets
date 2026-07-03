@@ -432,6 +432,32 @@ enum SelfTest {
         if let o = focusedOutline() { keyTo(o, "l", control: true) }
         result["ctrlLBackToEditor"] = inTree && window.firstResponder === tv
 
+        // Recent view: Enter on the fixed row focuses its LIST; j/k navigate;
+        // Enter opens a note (back to the editor); Esc returns to the tree.
+        keyTo(tv, "h", control: true)
+        if let outline = focusedOutline() {
+            keyTo(outline, "g")
+            keyTo(outline, "g") // first row = Search
+            keyTo(outline, "j") // Recent
+            keyTo(outline, "\r", keyCode: 36)
+            let list = window.firstResponder as? NSTableView
+            result["recentListFocused"] = list != nil && !(list is NSOutlineView)
+            if let list {
+                keyTo(list, "j")
+                keyTo(list, "k")
+                result["recentJKMoves"] = list.selectedRow == 0
+                keyTo(list, "\u{1B}", keyCode: 53) // esc → tree
+                result["escBackToTree"] = focusedOutline() != nil
+                if let o = focusedOutline() {
+                    keyTo(o, "\r", keyCode: 36) // selection still on Recent → reopen
+                }
+                if let list2 = window.firstResponder as? NSTableView, !(list2 is NSOutlineView) {
+                    keyTo(list2, "\r", keyCode: 36) // open selected recent note
+                    result["recentEnterOpensNote"] = window.firstResponder === tv
+                }
+            }
+        }
+
         return result
     }
 

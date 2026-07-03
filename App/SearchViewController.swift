@@ -15,11 +15,13 @@ final class SearchViewController: NSViewController {
 
     private let session: VaultSession
     var onOpenNote: ((URL) -> Void)?
+    /// Esc / ⌃h → back to the sidebar tree.
+    var onFocusSidebar: (() -> Void)?
 
     private var mode: Mode = .search
     private let searchField = NSSearchField()
     private let headerLabel = NSTextField(labelWithString: "")
-    private let tableView = NSTableView()
+    private let tableView = VimTableView()
     private let scrollView = NSScrollView()
     private var rows: [(title: String, detail: String, relPath: String)] = []
 
@@ -42,7 +44,12 @@ final class SearchViewController: NSViewController {
         searchField.target = self
         searchField.action = #selector(queryChanged)
         searchField.sendsSearchStringImmediately = true
+        searchField.delegate = self // ↓/Return → list, Esc → sidebar
         searchField.translatesAutoresizingMaskIntoConstraints = false
+
+        tableView.onKey = { [weak self] event in
+            self?.handleListKey(event) ?? false
+        }
 
         headerLabel.font = .systemFont(ofSize: 22, weight: .bold)
         headerLabel.textColor = theme.textColor
@@ -146,12 +153,119 @@ final class SearchViewController: NSViewController {
         onOpenNote?(session.url(forRelPath: rows[row].relPath))
     }
 
-    override func keyDown(with event: NSEvent) {
-        if event.keyCode == 36 { // return opens selection
-            openRow(tableView.selectedRow)
-            return
+    // MARK: Keyboard (vim list navigation)
+
+    private var pendingKey: Character?
+
+    /// Focus the results list, selecting the first row if nothing is.
+    func focusList() {
+        _ = view
+        view.window?.makeFirstResponder(tableView)
+        if tableView.selectedRow < 0, !rows.isEmpty {
+            tableView.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
+            tableView.scrollRowToVisible(0)
         }
-        super.keyDown(with: event)
+    }
+
+    /// Where activation should put focus: the field for empty searches, the
+    /// list everywhere else.
+    func focusPreferred() {
+        if case .search = mode, searchField.stringValue.isEmpty {
+            focusSearch()
+        } else {
+            focusList()
+        }
+    }
+
+    private func selectRow(_ row: Int) {
+        guard !rows.isEmpty else { return }
+        let clamped = min(max(row, 0), rows.count - 1)
+        tableView.selectRowIndexes(IndexSet(integer: clamped), byExtendingSelection: false)
+        tableView.scrollRowToVisible(clamped)
+    }
+
+    private func handleListKey(_ event: NSEvent) -> Bool {
+        if event.modifierFlags.contains(.control) {
+            if event.charactersIgnoringModifiers == "h" {
+                onFocusSidebar?()
+                return true
+            }
+            return false
+        }
+        if event.keyCode == 53 { // esc
+            pendingKey = nil
+            onFocusSidebar?()
+            return true
+        }
+        if event.keyCode == 36 || event.keyCode == 76 { // return
+            openRow(tableView.selectedRow)
+            return true
+        }
+        guard let ch = event.charactersIgnoringModifiers?.first else { return false }
+
+        if let pending = pendingKey {
+            pendingKey = nil
+            switch (pending, ch) {
+            case ("g", "g"):
+                selectRow(0)
+                return true
+            case ("d", "d"):
+                confirmTrashSelected()
+                return true
+            default:
+                break
+            }
+        }
+
+        switch ch {
+        case "j": selectRow(tableView.selectedRow + 1)
+        case "k": selectRow(tableView.selectedRow - 1)
+        case "G": selectRow(rows.count - 1)
+        case "g", "d": pendingKey = ch
+        case "l": openRow(tableView.selectedRow)
+        case "/":
+            if case .search = mode { focusSearch() } else { return false }
+        default:
+            return false
+        }
+        return true
+    }
+
+    private func confirmTrashSelected() {
+        let row = tableView.selectedRow
+        guard row >= 0, row < rows.count, let window = view.window else { return }
+        let entry = rows[row]
+        let alert = NSAlert()
+        alert.messageText = "Move “\(entry.title)” to Trash?"
+        alert.addButton(withTitle: "Move to Trash")
+        alert.addButton(withTitle: "Cancel")
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard let self, response == .alertFirstButtonReturn else {
+                self?.focusList()
+                return
+            }
+            self.session.trashNote(self.session.url(forRelPath: entry.relPath))
+            self.reload()
+            self.selectRow(min(row, self.rows.count - 1))
+            self.focusList()
+        }
+    }
+}
+
+// MARK: - Search field keys
+
+extension SearchViewController: NSSearchFieldDelegate {
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+        switch selector {
+        case #selector(NSResponder.moveDown(_:)), #selector(NSResponder.insertNewline(_:)):
+            focusList()
+            return true
+        case #selector(NSResponder.cancelOperation(_:)):
+            onFocusSidebar?()
+            return true
+        default:
+            return false
+        }
     }
 }
 

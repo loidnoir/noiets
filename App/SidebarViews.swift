@@ -249,6 +249,19 @@ final class SidebarFolderCellView: NSTableCellView {
     }
 }
 
+/// Plain table with a keyboard hook — the Search/Recent/Trash lists reuse the
+/// tree's vim navigation through it.
+final class VimTableView: NSTableView {
+    var onKey: ((NSEvent) -> Bool)?
+
+    override func keyDown(with event: NSEvent) {
+        if let onKey, onKey(event) {
+            return
+        }
+        super.keyDown(with: event)
+    }
+}
+
 /// Pure whitespace between the fixed items and the folder tree — no line,
 /// just air (Things-style).
 final class SeparatorCellView: NSView {

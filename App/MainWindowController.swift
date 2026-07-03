@@ -120,8 +120,10 @@ final class MainWindowController: NSWindowController {
             }
         }
         sidebarVC.onFocusEditor = { [weak self] in
-            self?.editorVC.focusEditor()
+            self?.focusCurrentContent()
         }
+        searchVC.onFocusSidebar = { [weak self] in self?.sidebarVC.focusTree() }
+        trashVC.onFocusSidebar = { [weak self] in self?.sidebarVC.focusTree() }
         inspectorVC.onJumpToHeading = { [weak self] range in
             self?.editorVC.jump(to: range)
         }
@@ -220,11 +222,25 @@ final class MainWindowController: NSWindowController {
         case .recent:
             searchVC.show(mode: .recent)
             hostVC.show(searchVC)
+            searchVC.focusList() // j/k works straight away
         case .trash:
             trashVC.reload()
             hostVC.show(trashVC)
+            trashVC.focusList()
         }
         window?.title = session.vault.name
+    }
+
+    /// ⌃l from the tree focuses whatever the content pane currently shows.
+    private func focusCurrentContent() {
+        switch hostVC.current {
+        case let vc where vc === searchVC:
+            searchVC.focusPreferred()
+        case let vc where vc === trashVC:
+            trashVC.focusList()
+        default:
+            editorVC.focusEditor()
+        }
     }
 
     func showTag(_ name: String) {
@@ -394,7 +410,7 @@ extension MainWindowController: NSMenuItemValidation {
 /// Hosts one child view controller at a time in the second split pane.
 @MainActor
 final class ContentHostController: NSViewController {
-    private var current: NSViewController?
+    private(set) var current: NSViewController?
 
     override func loadView() {
         view = NSView()
