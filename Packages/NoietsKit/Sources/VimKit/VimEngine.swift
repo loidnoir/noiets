@@ -53,6 +53,7 @@ public final class VimEngine {
     private var lastSearch: String?
     private var lastSearchWordBounded = false // set by * and # (\b…\b matching)
     private var searchDirectionForward = true // n repeats in this direction
+    private var searchStatus: String? // "3/10" match counter for the mode bar
 
     // Dot repeat: replay the keys of the last change; insert content is
     // captured text, not keys.
@@ -147,6 +148,11 @@ public final class VimEngine {
 
     private func handleNormalKey(_ key: VimKey) -> Bool {
         guard let target else { return false }
+
+        // The match counter lives until the next non-search key.
+        if !["n", "N", "*", "#"].contains(key.characters) {
+            searchStatus = nil
+        }
 
         if key.isEscape || (key.hasControl && key.characters == "[") {
             resetPending()
@@ -1064,7 +1070,11 @@ public final class VimEngine {
 
         let matches = regex.matches(in: t as String, range: NSRange(location: 0, length: t.length))
             .map(\.range)
-        guard !matches.isEmpty else { return }
+        guard !matches.isEmpty else {
+            searchStatus = "0/0"
+            statusUpdate()
+            return
+        }
 
         let selection = target.selection
         let found: NSRange
@@ -1085,6 +1095,10 @@ public final class VimEngine {
         target.selection = found
         target.scrollCaretToVisible()
         count = 0
+        if let index = matches.firstIndex(where: { $0 == found }) {
+            searchStatus = "\(index + 1)/\(matches.count)"
+        }
+        statusUpdate()
     }
 
     // MARK: - Dot repeat
@@ -1164,7 +1178,7 @@ public final class VimEngine {
             }
             onStatus?(s)
         } else {
-            onStatus?("")
+            onStatus?(searchStatus ?? "")
         }
     }
 }

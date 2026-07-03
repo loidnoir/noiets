@@ -34,10 +34,11 @@ final class CodeBandFragment: NSTextLayoutFragment {
 
     private var bandRect: CGRect {
         // Band edges sit on the text column, flush with the other components;
-        // the code text itself indents inside (paragraph head indent).
+        // the code text itself indents inside (paragraph head indent, which
+        // also shifts the fragment origin — compensate so the band stays put).
         let pad = textLayoutManager?.textContainer?.lineFragmentPadding ?? 5
-        return CGRect(x: pad, y: 0, width: columnWidth - pad * 2,
-                      height: layoutFragmentFrame.height)
+        return CGRect(x: pad - layoutFragmentFrame.minX, y: 0,
+                      width: columnWidth - pad * 2, height: layoutFragmentFrame.height)
     }
 
     override func draw(at point: CGPoint, in context: CGContext) {

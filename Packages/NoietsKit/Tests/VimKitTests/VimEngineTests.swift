@@ -454,6 +454,36 @@ private func type(_ engine: VimEngine, _ target: MockTarget, _ text: String) {
 // MARK: - Visual mode
 
 @MainActor
+@Suite struct SearchCounterTests {
+    @Test func starShowsMatchIndexAndCount() {
+        let (e, t) = makeEngine("foo bar\nfoo baz\nfoo", caret: 0) // engine holds t weakly
+        var status = ""
+        e.onStatus = { status = $0 }
+        send(e, "*") // word "foo": jumps to the 2nd of 3 matches
+        #expect(status == "2/3")
+        #expect(t.selection.location == 8)
+        send(e, "n")
+        #expect(status == "3/3")
+        send(e, "n") // wraps
+        #expect(status == "1/3")
+        send(e, "j") // any non-search key clears the counter
+        #expect(status == "")
+    }
+
+    @Test func slashSearchShowsCounter() {
+        let (e, t) = makeEngine("alpha beta\nbeta gamma", caret: 0) // engine holds t weakly
+        var status = ""
+        e.onStatus = { status = $0 }
+        send(e, "/beta")
+        _ = e.handleKey(VimKey(characters: "\r", isReturn: true))
+        #expect(status == "1/2")
+        send(e, "n")
+        #expect(status == "2/2")
+        #expect(t.selection.location == 11)
+    }
+}
+
+@MainActor
 @Suite struct VisualTests {
     @Test func tabIndentsSelectedLines() {
         let (e, t) = makeEngine("one\ntwo\nthree", caret: 0)
