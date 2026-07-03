@@ -18,6 +18,11 @@ final class MainWindowController: NSWindowController {
     private let trashVC: TrashViewController
     private let inspectorVC: InspectorViewController
     private let hostVC = ContentHostController()
+    private lazy var imageVC: ImageViewerViewController = {
+        let vc = ImageViewerViewController()
+        vc.onFocusSidebar = { [weak self] in self?.sidebarVC.focusTree() }
+        return vc
+    }()
     private var sidebarItem: NSSplitViewItem?
     private var inspectorItem: NSSplitViewItem?
 
@@ -130,6 +135,16 @@ final class MainWindowController: NSWindowController {
         }
         searchVC.onFocusSidebar = { [weak self] in self?.sidebarVC.focusTree() }
         trashVC.onFocusSidebar = { [weak self] in self?.sidebarVC.focusTree() }
+        // Vault image files open in the content pane; everything else falls
+        // back to the system default.
+        editorVC.editor.onOpenImageFile = { [weak self] url in
+            guard let self else { return }
+            if Vault.isImageFile(url) {
+                self.open(noteAt: url)
+            } else {
+                NSWorkspace.shared.open(url)
+            }
+        }
         inspectorVC.onJumpToHeading = { [weak self] range in
             self?.editorVC.jump(to: range)
         }
@@ -180,6 +195,13 @@ final class MainWindowController: NSWindowController {
     // MARK: Routing
 
     func open(noteAt url: URL) {
+        if Vault.isImageFile(url) {
+            imageVC.display(url: url)
+            hostVC.show(imageVC)
+            window?.title = url.lastPathComponent
+            imageVC.focusImage()
+            return
+        }
         guard let text = session.readNote(at: url) else {
             NSSound.beep()
             return
@@ -246,6 +268,8 @@ final class MainWindowController: NSWindowController {
             searchVC.focusPreferred()
         case let vc where vc === trashVC:
             trashVC.focusList()
+        case let vc where vc === imageVC:
+            imageVC.focusImage()
         default:
             editorVC.focusEditor()
         }

@@ -24,4 +24,13 @@ public struct Vault: Hashable, Sendable {
         let ext = url.pathExtension.lowercased()
         return ext == "md" || ext == "markdown"
     }
+
+    /// Image assets are shown in the tree (openable, embeddable) but never
+    /// indexed — only markdown files are notes.
+    public static let imageExtensions: Set<String> =
+        ["png", "jpg", "jpeg", "gif", "heic", "webp", "tiff", "bmp"]
+
+    public static func isImageFile(_ url: URL) -> Bool {
+        imageExtensions.contains(url.pathExtension.lowercased())
+    }
 }

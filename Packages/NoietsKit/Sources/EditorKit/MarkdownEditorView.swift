@@ -56,6 +56,10 @@ public final class MarkdownEditorView: NSView {
     public var onOpenWikiLink: ((String) -> Void)?
     /// #tag clicked.
     public var onOpenTag: ((String) -> Void)?
+
+    /// Local file opens from clicks (image embeds, file links). When unset,
+    /// files open with the system default app.
+    public var onOpenImageFile: ((URL) -> Void)?
     /// Titles/stems for [[ autocompletion, filtered by the partial query.
     public var wikiCompletionProvider: ((String) -> [String])?
 
@@ -433,16 +437,19 @@ extension MarkdownEditorView: NSTextViewDelegate {
             return false
         }
         // Anything else is a vault-relative file reference (image paths,
-        // ![](assets/x.png) …): resolve it and open with the system viewer.
+        // ![](assets/x.png) …): resolve it and open it.
         if let file = layoutController?.imageProvider.resolveFileURL(forPath: urlString) {
-            NSWorkspace.shared.open(file)
+            if let onOpenImageFile {
+                onOpenImageFile(file)
+            } else {
+                NSWorkspace.shared.open(file)
+            }
             return true
         }
         return false
     }
 
-    /// Double-clicking a rendered image (or its source line) opens the file
-    /// in the system viewer.
+    /// Double-clicking a rendered image (or its source line) opens the file.
     func openImageIfPresent(onLineAt charIndex: Int) -> Bool {
         let ns = textView.string as NSString
         guard ns.length > 0 else { return false }
@@ -466,7 +473,11 @@ extension MarkdownEditorView: NSTextViewDelegate {
             return false
         }
         if let file = layoutController?.imageProvider.resolveFileURL(forPath: trimmedPath) {
-            NSWorkspace.shared.open(file)
+            if let onOpenImageFile {
+                onOpenImageFile(file)
+            } else {
+                NSWorkspace.shared.open(file)
+            }
             return true
         }
         return false

@@ -28,6 +28,7 @@ public final class LivePreviewLayoutController: NSObject {
         case code
         case image(path: String)
         case math(latex: String)
+        case inlineMath(spans: [InlineMathFragment.MathSpan])
         case tableRow(cells: [String], isHeader: Bool, columns: [CGFloat])
         case tableDelimiter
         case quote
@@ -83,6 +84,10 @@ public final class LivePreviewLayoutController: NSObject {
             let cells = Self.cells(of: text.substring(with: line.contentRange))
             let (columns, headerIndex) = tableGeometry(for: lineIndex, scan: scan, text: text)
             return .tableRow(cells: cells, isHeader: lineIndex == headerIndex, columns: columns)
+        case .listItem where !active:
+            let tokens = MarkdownScan.lineTokens(text, line: line)
+            let spans = inlineMathSpans(tokens: tokens, text: text, base: line.range.location)
+            return spans.isEmpty ? .plain : .inlineMath(spans: spans)
         case .paragraph where !active:
             // Obsidian-style image embed on its own line: ![[image.png]]
             let trimmedLine = text.substring(with: line.contentRange)
@@ -116,10 +121,35 @@ public final class LivePreviewLayoutController: NSObject {
                     return .math(latex: text.substring(with: tokens[1].range))
                 }
             }
+            // Math mixed into the text: typeset inline over the collapsed spans.
+            let spans = inlineMathSpans(tokens: tokens, text: text, base: line.range.location)
+            if !spans.isEmpty {
+                return .inlineMath(spans: spans)
+            }
             return .plain
         default:
             return .plain
         }
+    }
+
+    /// Marker-content-marker math runs of a line, as fragment-relative spans
+    /// paired with their rendered images. Mirrors the highlighter's collapse
+    /// rule — a span appears here iff its width was reserved there.
+    private func inlineMathSpans(
+        tokens: [Token], text: NSString, base: Int
+    ) -> [InlineMathFragment.MathSpan] {
+        var spans: [InlineMathFragment.MathSpan] = []
+        for (i, token) in tokens.enumerated() {
+            guard case .mathContent(let display) = token.kind,
+                  i > 0, i + 1 < tokens.count,
+                  tokens[i - 1].kind == .mathMarker,
+                  tokens[i + 1].kind == .mathMarker,
+                  let image = InlineMath.image(latex: text.substring(with: token.range),
+                                               display: display, theme: theme)
+            else { continue }
+            spans.append(.init(relativeLocation: tokens[i - 1].range.location - base, image: image))
+        }
+        return spans
     }
 
     // MARK: Table geometry
@@ -205,6 +235,8 @@ extension LivePreviewLayoutController: @preconcurrency NSTextLayoutManagerDelega
                                          theme: theme, image: image, isMath: true)
             }
             return standard
+        case .inlineMath(let spans):
+            return InlineMathFragment(textElement: textElement, range: elementRange, spans: spans)
         case .tableRow(let cells, let isHeader, let columns):
             return TableRowFragment(textElement: textElement, range: elementRange, theme: theme,
                                     cells: cells, isHeader: isHeader, columns: columns)

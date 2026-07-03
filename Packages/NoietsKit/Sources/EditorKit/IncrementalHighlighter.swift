@@ -248,6 +248,27 @@ public final class IncrementalHighlighter: NSObject {
                 }
             case .tagName:
                 link(token.range, noiets("tag", text.substring(with: token.range)))
+            case .mathContent(let display):
+                // Inline $…$ / $$…$$: collapse the whole span and reserve the
+                // typeset image's width with a kern on the closing marker; the
+                // InlineMathFragment draws the image over the gap.
+                guard index > 0, index + 1 < tokens.count,
+                      tokens[index - 1].kind == .mathMarker,
+                      tokens[index + 1].kind == .mathMarker,
+                      let image = InlineMath.image(latex: text.substring(with: token.range),
+                                                   display: display, theme: theme)
+                else { break }
+                hide(token.range)
+                let open = tokens[index - 1].range
+                let close = tokens[index + 1].range
+                let span = NSRange(location: open.location,
+                                   length: close.location + close.length - open.location)
+                let natural = (text.substring(with: span) as NSString)
+                    .size(withAttributes: [.font: Self.collapsedFont]).width
+                let kern = max(0, InlineMath.reservedWidth(for: image) - natural)
+                storage.addAttribute(.kern, value: kern,
+                                     range: NSRange(location: span.location + span.length - 1,
+                                                    length: 1))
             default:
                 break
             }

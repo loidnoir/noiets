@@ -13,14 +13,18 @@ public final class FileNode {
         self.children = children
     }
 
-    /// Display name: filename without the .md extension for files.
+    /// Display name: notes drop the .md extension; other files (images) keep
+    /// theirs so the kind stays visible.
     public var title: String {
-        isFolder ? url.lastPathComponent : url.deletingPathExtension().lastPathComponent
+        if isFolder { return url.lastPathComponent }
+        return Vault.isMarkdownFile(url)
+            ? url.deletingPathExtension().lastPathComponent
+            : url.lastPathComponent
     }
 }
 
 public enum VaultScanner {
-    /// Scans the vault into a tree of folders + markdown files.
+    /// Scans the vault into a tree of folders + markdown files + image assets.
     /// Hidden entries (dotfiles, .trash, .obsidian, …) are skipped.
     public static func scan(_ vault: Vault) -> FileNode {
         FileNode(url: vault.rootURL, isFolder: true, children: scanChildren(of: vault.rootURL))
@@ -40,7 +44,7 @@ public enum VaultScanner {
             let isDir = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
             if isDir {
                 folders.append(FileNode(url: url, isFolder: true, children: scanChildren(of: url)))
-            } else if Vault.isMarkdownFile(url) {
+            } else if Vault.isMarkdownFile(url) || Vault.isImageFile(url) {
                 files.append(FileNode(url: url, isFolder: false))
             }
         }
