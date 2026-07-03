@@ -11,6 +11,8 @@ final class SidebarViewController: NSViewController {
     var onSelectNote: ((URL) -> Void)?
     var onSelectFixed: ((Fixed) -> Void)?
     var onCurrentNoteRemoved: (() -> Void)?
+    /// ⌃l / Esc from the tree → give focus back to the editor.
+    var onFocusEditor: (() -> Void)?
 
     private let scrollView = NSScrollView()
     private let outlineView = SidebarOutlineView()
@@ -103,6 +105,11 @@ final class SidebarViewController: NSViewController {
         // Click anywhere on a folder row to open/close it.
         outlineView.target = self
         outlineView.action = #selector(rowClicked)
+
+        // Vim-style tree navigation (j/k/h/l, Enter, dd, r, m, a, gg/G…).
+        outlineView.onKey = { [weak self] event in
+            self?.handleTreeKey(event) ?? false
+        }
 
         // Drag & drop: move notes/folders between folders (and to the root).
         outlineView.registerForDraggedTypes([.fileURL])
@@ -284,6 +291,248 @@ final class SidebarViewController: NSViewController {
         session.trashNote(node.url)
         if session.currentNoteURL == nil {
             onCurrentNoteRemoved?()
+        }
+    }
+
+    // MARK: Keyboard tree navigation (nvim-tree essentials)
+
+    private var pendingTreeKey: Character? // for dd / gg chords
+
+    /// Focuses the tree, ensuring something is selected for j/k to move from.
+    func focusTree() {
+        _ = view // ensure loaded
+        view.window?.makeFirstResponder(outlineView)
+        if outlineView.selectedRow < 0 {
+            moveSelection(from: -1, direction: 1)
+        }
+    }
+
+    private func handleTreeKey(_ event: NSEvent) -> Bool {
+        // ⌃l (or Esc) hands focus to the editor pane.
+        if event.modifierFlags.contains(.control) {
+            switch event.charactersIgnoringModifiers {
+            case "l", "j", "k":
+                onFocusEditor?()
+                return true
+            case "h":
+                return true // already here
+            default:
+                return false
+            }
+        }
+        if event.keyCode == 53 { // esc
+            pendingTreeKey = nil
+            onFocusEditor?()
+            return true
+        }
+        if event.keyCode == 36 || event.keyCode == 76 { // return
+            pendingTreeKey = nil
+            activateSelectedRow()
+            return true
+        }
+        guard let ch = event.charactersIgnoringModifiers?.first else { return false }
+
+        // Two-key chords: dd (delete), gg (top).
+        if let pending = pendingTreeKey {
+            pendingTreeKey = nil
+            switch (pending, ch) {
+            case ("d", "d"):
+                confirmTrashSelected()
+                return true
+            case ("g", "g"):
+                moveSelection(from: -1, direction: 1)
+                return true
+            default:
+                break // fall through to treat ch fresh
+            }
+        }
+
+        switch ch {
+        case "j":
+            moveSelection(from: outlineView.selectedRow, direction: 1)
+        case "k":
+            moveSelection(from: outlineView.selectedRow, direction: -1)
+        case "l":
+            expandOrOpenSelected()
+        case "h":
+            collapseOrParentSelected()
+        case "G":
+            moveSelection(from: outlineView.numberOfRows, direction: -1)
+        case "g", "d":
+            pendingTreeKey = ch
+        case "r":
+            renameSelected()
+        case "m":
+            moveSelectedViaPicker()
+        case "a":
+            createNoteAtSelection()
+        case "A":
+            createFolderAtSelection()
+        case "R":
+            session.rescan()
+        default:
+            return false
+        }
+        return true
+    }
+
+    /// Moves the selection cursor without activating rows (Enter activates).
+    private func moveSelection(from row: Int, direction: Int) {
+        let count = outlineView.numberOfRows
+        guard count > 0 else { return }
+        var next = row + direction
+        while next >= 0, next < count {
+            if let item = outlineView.item(atRow: next) as? Item {
+                switch item.kind {
+                case .separator: break // skip
+                case .fixed, .node:
+                    suppressSelectionCallback = true
+                    outlineView.selectRowIndexes(IndexSet(integer: next), byExtendingSelection: false)
+                    suppressSelectionCallback = false
+                    outlineView.scrollRowToVisible(next)
+                    return
+                }
+            }
+            next += direction
+        }
+    }
+
+    private var selectedItem: Item? {
+        guard outlineView.selectedRow >= 0 else { return nil }
+        return outlineView.item(atRow: outlineView.selectedRow) as? Item
+    }
+
+    private func activateSelectedRow() {
+        guard let item = selectedItem else { return }
+        switch item.kind {
+        case .fixed(let fixed):
+            onSelectFixed?(fixed)
+        case .node(let node) where node.isFolder:
+            toggle(item)
+        case .node(let node):
+            onSelectNote?(node.url) // opens + focuses the editor
+        case .separator:
+            break
+        }
+    }
+
+    private func expandOrOpenSelected() {
+        guard let item = selectedItem else { return }
+        switch item.kind {
+        case .node(let node) where node.isFolder:
+            if !outlineView.isItemExpanded(item), !item.children.isEmpty {
+                outlineView.expandItem(item)
+            }
+        default:
+            activateSelectedRow()
+        }
+    }
+
+    private func collapseOrParentSelected() {
+        guard let item = selectedItem, let node = item.fileNode else { return }
+        if node.isFolder, outlineView.isItemExpanded(item) {
+            outlineView.collapseItem(item)
+            return
+        }
+        // Jump to the parent folder row.
+        let parent = node.url.deletingLastPathComponent().standardizedFileURL
+        if let parentItem = itemsByURL[parent] {
+            let row = outlineView.row(forItem: parentItem)
+            if row >= 0 {
+                suppressSelectionCallback = true
+                outlineView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+                suppressSelectionCallback = false
+                outlineView.scrollRowToVisible(row)
+            }
+        }
+    }
+
+    // MARK: Tree actions (dd / r / m / a / A)
+
+    private var selectionContextFolder: URL {
+        guard let node = selectedItem?.fileNode else { return session.vault.rootURL }
+        return node.isFolder ? node.url : node.url.deletingLastPathComponent()
+    }
+
+    private func confirmTrashSelected() {
+        guard let node = selectedItem?.fileNode, let window = view.window else { return }
+        let alert = NSAlert()
+        alert.messageText = "Move “\(node.title)” to Trash?"
+        alert.informativeText = node.isFolder
+            ? "The folder and everything inside it moves to the vault’s .trash."
+            : "The note moves to the vault’s .trash and can be restored from there."
+        alert.addButton(withTitle: "Move to Trash")
+        alert.addButton(withTitle: "Cancel")
+        let row = outlineView.selectedRow
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard let self, response == .alertFirstButtonReturn else { return }
+            self.session.trashNote(node.url)
+            if self.session.currentNoteURL == nil {
+                self.onCurrentNoteRemoved?()
+            }
+            self.moveSelection(from: min(row, self.outlineView.numberOfRows), direction: -1)
+            self.focusTree()
+        }
+    }
+
+    private func renameSelected() {
+        guard let node = selectedItem?.fileNode, let window = view.window else { return }
+        let alert = NSAlert()
+        alert.messageText = "Rename “\(node.title)”"
+        alert.addButton(withTitle: "Rename")
+        alert.addButton(withTitle: "Cancel")
+        let field = NSTextField(string: node.title)
+        field.frame = NSRect(x: 0, y: 0, width: 240, height: 24)
+        alert.accessoryView = field
+        alert.window.initialFirstResponder = field
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard let self, response == .alertFirstButtonReturn else {
+                self?.focusTree()
+                return
+            }
+            if let renamed = self.session.rename(node.url, to: field.stringValue) {
+                self.select(url: renamed, notify: false)
+            } else {
+                NSSound.beep()
+            }
+            self.focusTree()
+        }
+    }
+
+    private func moveSelectedViaPicker() {
+        guard let node = selectedItem?.fileNode, let window = view.window else { return }
+        let source = node.url
+        let folders = session.allFolders().filter { folder in
+            // Exclude the item itself / its own subtree and its current parent.
+            folder.url.standardizedFileURL != source.standardizedFileURL
+                && !folder.url.path.hasPrefix(source.path + "/")
+                && folder.url.standardizedFileURL != source.deletingLastPathComponent().standardizedFileURL
+        }
+        PalettePanel.shared.present(over: window, placeholder: "Move “\(node.title)” to…") { [weak self] query in
+            let q = query.lowercased()
+            return folders
+                .filter { q.isEmpty || $0.title.lowercased().contains(q) }
+                .map { folder in
+                    PalettePanel.Item(symbol: "folder", title: folder.title, subtitle: nil) {
+                        if let moved = self?.session.moveItem(at: source, into: folder.url) {
+                            self?.select(url: moved, notify: false)
+                        }
+                        self?.focusTree()
+                    }
+                }
+        }
+    }
+
+    private func createNoteAtSelection() {
+        guard let url = session.createNote(in: selectionContextFolder) else { return }
+        select(url: url, notify: false)
+        onSelectNote?(url)
+    }
+
+    private func createFolderAtSelection() {
+        if let url = session.createFolder(in: selectionContextFolder) {
+            select(url: url, notify: false)
+            focusTree()
         }
     }
 

@@ -28,9 +28,19 @@ final class SeamlessSplitView: NSSplitView {
 /// Outline view with the native disclosure triangle hidden by zeroing its
 /// frame. (Returning false from shouldShowOutlineCellForItem instead makes
 /// AppKit pin items expanded — collapseItem is silently ignored.)
+/// Keyboard events route to the controller first (vim-style tree navigation).
 final class SidebarOutlineView: NSOutlineView {
+    var onKey: ((NSEvent) -> Bool)?
+
     override func frameOfOutlineCell(atRow row: Int) -> NSRect {
         .zero
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if let onKey, onKey(event) {
+            return
+        }
+        super.keyDown(with: event)
     }
 }
 

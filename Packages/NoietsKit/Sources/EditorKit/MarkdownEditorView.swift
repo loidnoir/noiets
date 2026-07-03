@@ -151,6 +151,13 @@ public final class MarkdownEditorView: NSView {
     private var blinkTimer: Timer?
 
     func refreshCaretShape() {
+        // No caret decoration when the editor doesn't have focus (the tree
+        // pane owns the keyboard) — doubles as the focus indicator.
+        if let responder = textView.window?.firstResponder, responder !== textView {
+            stopBlink()
+            blockCaret.isHidden = true
+            return
+        }
         if vim.mode == .insert {
             stopBlink()
             blockCaret.isHidden = true

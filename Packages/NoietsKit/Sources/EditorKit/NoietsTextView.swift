@@ -67,6 +67,10 @@ public final class NoietsTextView: NSTextView {
     /// indicator is created/reset around first-responder changes).
     public var onFocusChange: (() -> Void)?
 
+    /// ⌃h/⌃j/⌃k/⌃l pane navigation (normal/visual mode only — insert keeps
+    /// the control keys for the system/IME).
+    public var onPaneNavigate: ((Character) -> Void)?
+
     public override func becomeFirstResponder() -> Bool {
         let result = super.becomeFirstResponder()
         if result { DispatchQueue.main.async { [weak self] in self?.onFocusChange?() } }
@@ -81,6 +85,14 @@ public final class NoietsTextView: NSTextView {
 
     public override func keyDown(with event: NSEvent) {
         if let completionInterceptor, completionInterceptor.handleKeyDown(event) {
+            return
+        }
+        // Pane navigation gets first look at ⌃h/j/k/l outside insert mode.
+        if let onPaneNavigate, let vim, vim.mode != .insert,
+           event.modifierFlags.contains(.control),
+           let ch = event.charactersIgnoringModifiers?.first,
+           "hjkl".contains(ch) {
+            onPaneNavigate(ch)
             return
         }
         if let vim, vim.handleKey(VimKey(event: event)) {

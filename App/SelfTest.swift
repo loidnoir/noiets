@@ -78,6 +78,10 @@ enum SelfTest {
                let sidebar = split.splitViewItems.first?.viewController as? SidebarViewController {
                 out["sidebar"] = sidebar.sidebarDebugInfo
             }
+            if let wc = window.windowController as? MainWindowController,
+               let editorView = findEditorView(in: window) {
+                out["paneNav"] = paneNavChecks(wc, editorView, window: window)
+            }
             if let outline = outlines.first {
                 out["sidebarRows"] = outline.numberOfRows
                 out["sidebarSelectedRow"] = outline.selectedRow
@@ -365,6 +369,69 @@ enum SelfTest {
         result["completionVisible"] = editorView.isWikiCompletionActive
         key("\r", keyCode: 36)
         result["afterCompletion"] = tv.string
+        return result
+    }
+
+    /// Pane navigation + vim tree keys, all through real key events.
+    private static func paneNavChecks(
+        _ wc: MainWindowController,
+        _ editorView: MarkdownEditorView,
+        window: NSWindow
+    ) -> [String: Any] {
+        var result: [String: Any] = [:]
+        let tv = editorView.textView
+
+        func keyTo(_ view: NSView, _ ch: String, keyCode: UInt16 = 0, control: Bool = false) {
+            guard let event = NSEvent.keyEvent(
+                with: .keyDown, location: .zero,
+                modifierFlags: control ? [.control] : [],
+                timestamp: 0, windowNumber: window.windowNumber, context: nil,
+                characters: ch, charactersIgnoringModifiers: ch,
+                isARepeat: false, keyCode: keyCode
+            ) else { return }
+            view.keyDown(with: event)
+        }
+        func focusedOutline() -> NSOutlineView? {
+            window.firstResponder as? NSOutlineView
+        }
+
+        window.makeFirstResponder(tv)
+        keyTo(tv, "\u{1B}", keyCode: 53) // ensure normal mode (⌃h is insert-safe)
+        // ⌃h from editor normal mode → tree focused.
+        keyTo(tv, "h", control: true)
+        guard let outline = focusedOutline() else {
+            result["treeFocusedOnCtrlH"] = false
+            return result
+        }
+        result["treeFocusedOnCtrlH"] = true
+
+        // j/k move the cursor WITHOUT opening things.
+        let titleBefore = window.title
+        keyTo(outline, "j")
+        keyTo(outline, "j")
+        result["jMovesWithoutActivating"] = window.title == titleBefore
+        let rowAfterJ = outline.selectedRow
+        keyTo(outline, "k")
+        result["kMovesBack"] = outline.selectedRow == rowAfterJ - 1
+
+        // G then gg bounds.
+        keyTo(outline, "G")
+        result["GGoesLast"] = outline.selectedRow == outline.numberOfRows - 1
+        keyTo(outline, "g")
+        keyTo(outline, "g")
+        result["ggGoesFirst"] = outline.selectedRow >= 0 && outline.selectedRow <= 1
+
+        // Enter on a note row opens it and focuses the editor.
+        keyTo(outline, "G") // last row = a note in the scratch vault
+        keyTo(outline, "\r", keyCode: 36)
+        result["enterOpensAndFocusesEditor"] = window.firstResponder === tv
+
+        // ⌃h back to tree, ⌃l returns to editor.
+        keyTo(tv, "h", control: true)
+        let inTree = focusedOutline() != nil
+        if let o = focusedOutline() { keyTo(o, "l", control: true) }
+        result["ctrlLBackToEditor"] = inTree && window.firstResponder === tv
+
         return result
     }
 

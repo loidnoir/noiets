@@ -112,6 +112,16 @@ final class MainWindowController: NSWindowController {
             self?.updateVimBar(mode: nil)
         }
         updateVimBar(mode: .normal)
+
+        // Pane navigation: ⌃h from the editor → tree; ⌃l/Esc in tree → editor.
+        editorVC.editor.textView.onPaneNavigate = { [weak self] direction in
+            if direction == "h" || direction == "j" || direction == "k" {
+                self?.sidebarVC.focusTree()
+            }
+        }
+        sidebarVC.onFocusEditor = { [weak self] in
+            self?.editorVC.focusEditor()
+        }
         inspectorVC.onJumpToHeading = { [weak self] range in
             self?.editorVC.jump(to: range)
         }

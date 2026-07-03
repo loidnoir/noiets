@@ -227,6 +227,55 @@ final class VaultSession {
         return dest
     }
 
+    /// Renames a note or folder in place (extension preserved for files).
+    /// Returns the new URL, or nil on collision/failure.
+    @discardableResult
+    func rename(_ url: URL, to newName: String) -> URL? {
+        let trimmed = newName.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty, !trimmed.contains("/") else { return nil }
+        let fm = FileManager.default
+        let isFolder = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
+        let ext = url.pathExtension
+        let name = isFolder || ext.isEmpty ? trimmed : "\(trimmed).\(ext)"
+        let dest = url.deletingLastPathComponent().appendingPathComponent(name)
+        guard dest.standardizedFileURL != url.standardizedFileURL else { return url }
+        guard !fm.fileExists(atPath: dest.path) else { return nil }
+        do {
+            try fm.moveItem(at: url, to: dest)
+        } catch {
+            Self.log.error("Rename failed: \(error.localizedDescription)")
+            return nil
+        }
+        let source = url.standardizedFileURL
+        if let current = currentNoteURL {
+            if current.standardizedFileURL == source {
+                currentNoteURL = dest
+            } else if current.path.hasPrefix(source.path + "/") {
+                let suffix = String(current.path.dropFirst(source.path.count))
+                currentNoteURL = URL(fileURLWithPath: dest.path + suffix)
+            }
+        }
+        rescan()
+        if let reindexer {
+            Task { await reindexer.pathsChanged([source.path, dest.path]) }
+        }
+        return dest
+    }
+
+    /// All folders in the vault (for the move picker), root first.
+    func allFolders() -> [(title: String, url: URL)] {
+        var result: [(String, URL)] = [(vault.name, vault.rootURL)]
+        func walk(_ node: FileNode, path: String) {
+            for child in node.children where child.isFolder {
+                let display = path.isEmpty ? child.title : "\(path)/\(child.title)"
+                result.append((display, child.url))
+                walk(child, path: display)
+            }
+        }
+        walk(tree, path: "")
+        return result
+    }
+
     func trashNote(_ url: URL) {
         let removesCurrent = currentNoteURL == url
             || currentNoteURL?.path.hasPrefix(url.path + "/") == true
