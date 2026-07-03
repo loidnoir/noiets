@@ -95,6 +95,11 @@ final class OverlayLineFragment: NSTextLayoutFragment {
             guard let line = lineFragment(containing: span.relativeLocation) else { continue }
             let anchor = line.locationForCharacter(at: span.relativeLocation)
             let bounds = line.typographicBounds
+            // Markers center on the x-height midline (where a strikethrough
+            // sits), anchored to the real rendered baseline.
+            let font = NSFont.systemFont(ofSize: theme.baseFontSize)
+            let baseline = bounds.origin.y + line.glyphOrigin.y
+            let textMidline = baseline - font.xHeight / 2
 
             switch span.kind {
             case .chip:
@@ -118,7 +123,7 @@ final class OverlayLineFragment: NSTextLayoutFragment {
                 let radius: CGFloat = theme.baseFontSize * 0.31
                 let center = CGPoint(
                     x: point.x + bounds.origin.x + anchor.x + dashWidth / 2,
-                    y: point.y + bounds.origin.y + bounds.height / 2
+                    y: point.y + textMidline
                 )
                 theme.accentColor.setFill()
                 NSBezierPath(ovalIn: CGRect(x: center.x - radius, y: center.y - radius,
@@ -132,7 +137,7 @@ final class OverlayLineFragment: NSTextLayoutFragment {
                 let radius: CGFloat = theme.baseFontSize * 0.31
                 let center = CGPoint(
                     x: point.x + bounds.origin.x + anchor.x + dashWidth / 2,
-                    y: point.y + bounds.origin.y + bounds.height / 2
+                    y: point.y + textMidline
                 )
                 let rect = CGRect(x: center.x - radius, y: center.y - radius,
                                   width: radius * 2, height: radius * 2)

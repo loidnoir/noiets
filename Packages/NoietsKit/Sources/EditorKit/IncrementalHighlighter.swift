@@ -201,7 +201,7 @@ public final class IncrementalHighlighter: NSObject {
                 style.firstLineHeadIndent = 10
                 style.headIndent = 10
                 if opensCodeBlock {
-                    style.paragraphSpacingBefore = 12
+                    style.paragraphSpacingBefore = 16
                 }
                 storage.addAttribute(.paragraphStyle, value: style, range: line.range)
             default:
