@@ -12,11 +12,21 @@ enum SelfTest {
         let env = ProcessInfo.processInfo.environment
         guard env["NOIETS_SELFTEST"] == "1" else { return }
         let delay = Double(env["NOIETS_SELFTEST_DELAY"] ?? "") ?? 1.0
+        // Kick a remote image fetch now; the report checks the cache later.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            if let window = NSApp.windows.first(where: { $0.isVisible }),
+               let editorView = findEditorView(in: window) {
+                _ = editorView.layoutController?.imageProvider.image(forPath: Self.remoteProbeURL)
+            }
+        }
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
             report(session: session())
             exit(0)
         }
     }
+
+    private static let remoteProbeURL =
+        "https://www.google.com/images/branding/googlelogo/2x/googlelogo_color_272x92dp.png"
 
     private static func report(session: VaultSession?) {
         var out: [String: Any] = [:]
@@ -60,6 +70,9 @@ enum SelfTest {
             }
             if let editorView = findEditorView(in: window) {
                 out["vim"] = vimChecks(editorView)
+                // Non-nil now = the 0.5s-kick download landed and cached.
+                out["remoteImageCached"] =
+                    editorView.layoutController?.imageProvider.image(forPath: remoteProbeURL) != nil
             }
             if let session = session {
                 out["index"] = indexChecks(session)
@@ -313,6 +326,18 @@ enum SelfTest {
         } else {
             result["jFromWrapBoundary"] = "skipped (no wrap)"
         }
+
+        // Arrow keys act as h/j/k/l in normal mode (visual lines + sticky column).
+        editorView.load(text: "first line\nsecond line\nthird")
+        tv.setSelectedRange(NSRange(location: 2, length: 0))
+        key("\u{F701}", keyCode: 125) // ↓ — pixel goal: lands on line 2 near col 2
+        let afterDown = tv.selectedRange().location
+        result["downArrowMovesDown"] = afterDown >= 11 && afterDown <= 15
+        key("\u{F703}", keyCode: 124) // →
+        result["rightArrowMovesRight"] = tv.selectedRange().location == afterDown + 1
+        key("\u{F702}", keyCode: 123) // ←
+        key("\u{F700}", keyCode: 126) // ↑
+        result["arrowRoundTrip"] = tv.selectedRange().location == 2
 
         // ⌃d half-page scroll through the real key path.
         editorView.load(text: (1...80).map { "line \($0)" }.joined(separator: "\n"))

@@ -63,6 +63,17 @@ public final class LivePreviewLayoutController: NSObject {
             let (columns, headerIndex) = tableGeometry(for: lineIndex, scan: scan, text: text)
             return .tableRow(cells: cells, isHeader: lineIndex == headerIndex, columns: columns)
         case .paragraph where !active:
+            // Obsidian-style image embed on its own line: ![[image.png]]
+            let trimmedLine = text.substring(with: line.contentRange)
+                .trimmingCharacters(in: .whitespaces)
+            if trimmedLine.hasPrefix("![["), trimmedLine.hasSuffix("]]") {
+                let inner = String(trimmedLine.dropFirst(3).dropLast(2))
+                    .trimmingCharacters(in: .whitespaces)
+                let ext = (inner as NSString).pathExtension.lowercased()
+                if ["png", "jpg", "jpeg", "gif", "heic", "webp", "tiff", "bmp"].contains(ext) {
+                    return .image(path: inner)
+                }
+            }
             let tokens = MarkdownScan.lineTokens(text, line: line)
             // Image-only line: ![alt](path) and nothing else.
             let significant = tokens.filter { $0.kind != .linkText }

@@ -71,6 +71,16 @@ public final class NoietsTextView: NSTextView {
     /// the control keys for the system/IME).
     public var onPaneNavigate: ((Character) -> Void)?
 
+    /// Returns true when the paste was handled as an image embed.
+    public var onPasteImage: (() -> Bool)?
+
+    public override func paste(_ sender: Any?) {
+        if let onPasteImage, onPasteImage() {
+            return
+        }
+        super.paste(sender)
+    }
+
     public override func becomeFirstResponder() -> Bool {
         let result = super.becomeFirstResponder()
         if result { DispatchQueue.main.async { [weak self] in self?.onFocusChange?() } }
@@ -312,8 +322,19 @@ extension NoietsTextView: VimTextTarget {
 public extension VimKey {
     @MainActor
     init(event: NSEvent) {
+        // Arrow keys behave as h/j/k/l — same visual-line movement and sticky
+        // column in normal/visual mode. (Insert mode never consumes them, so
+        // native arrow behavior there is unchanged.)
+        let characters: String
+        switch event.keyCode {
+        case 123: characters = "h"
+        case 124: characters = "l"
+        case 125: characters = "j"
+        case 126: characters = "k"
+        default: characters = event.charactersIgnoringModifiers ?? ""
+        }
         self.init(
-            characters: event.charactersIgnoringModifiers ?? "",
+            characters: characters,
             isEscape: event.keyCode == 53,
             isReturn: event.keyCode == 36 || event.keyCode == 76
                 || event.characters == "\r" || event.characters == "\n",

@@ -98,6 +98,15 @@ public final class MarkdownEditorView: NSView {
         layoutController = controller
         textView.textLayoutManager?.delegate = controller
 
+        // Remote images render as soon as their download lands.
+        controller.imageProvider.onRemoteImageLoaded = { [weak self] in
+            guard let layoutManager = self?.textView.textLayoutManager else { return }
+            layoutManager.invalidateLayout(for: layoutManager.documentRange)
+        }
+        textView.onPasteImage = { [weak self] in
+            self?.pasteImageFromClipboard() ?? false
+        }
+
         scrollView.documentView = textView
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(scrollView)
@@ -278,6 +287,66 @@ public final class MarkdownEditorView: NSView {
         }
         let windowRect = window.convertFromScreen(screenRect)
         return textView.convert(windowRect, from: nil)
+    }
+
+    // MARK: Image paste
+
+    /// ⌘V with an image (or image file) on the clipboard: save it into the
+    /// vault's assets/ folder and insert the markdown embed at the caret.
+    private func pasteImageFromClipboard() -> Bool {
+        guard let root = resourceRoot else { return false }
+        let pasteboard = NSPasteboard.general
+
+        // An image FILE on the clipboard (Finder copy) is copied into assets/.
+        if let urls = pasteboard.readObjects(
+            forClasses: [NSURL.self],
+            options: [.urlReadingFileURLsOnly: true]
+        ) as? [URL], let file = urls.first {
+            let ext = file.pathExtension.lowercased()
+            let imageExts = ["png", "jpg", "jpeg", "gif", "heic", "webp", "tiff", "bmp"]
+            guard imageExts.contains(ext) else { return false }
+            return embedImage(data: try? Data(contentsOf: file), ext: ext, root: root)
+        }
+
+        // Raw image data (screenshot in clipboard) is written as PNG.
+        if let image = NSImage(pasteboard: pasteboard) {
+            guard let tiff = image.tiffRepresentation,
+                  let rep = NSBitmapImageRep(data: tiff),
+                  let png = rep.representation(using: .png, properties: [:]) else { return false }
+            return embedImage(data: png, ext: "png", root: root)
+        }
+        return false
+    }
+
+    private func embedImage(data: Data?, ext: String, root: URL) -> Bool {
+        guard let data else { return false }
+        let assets = root.appendingPathComponent("assets", isDirectory: true)
+        try? FileManager.default.createDirectory(at: assets, withIntermediateDirectories: true)
+
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        var name = "pasted-\(formatter.string(from: Date())).\(ext)"
+        var counter = 2
+        while FileManager.default.fileExists(atPath: assets.appendingPathComponent(name).path) {
+            name = "pasted-\(formatter.string(from: Date()))-\(counter).\(ext)"
+            counter += 1
+        }
+        do {
+            try data.write(to: assets.appendingPathComponent(name))
+        } catch {
+            return false
+        }
+
+        let markdown = "![](assets/\(name))"
+        let caret = textView.selectedRange()
+        if textView.shouldChangeText(in: caret, replacementString: markdown) {
+            textView.textStorage?.replaceCharacters(in: caret, with: markdown)
+            textView.didChangeText()
+            textView.setSelectedRange(
+                NSRange(location: caret.location + (markdown as NSString).length, length: 0)
+            )
+        }
+        return true
     }
 
     // MARK: Content
