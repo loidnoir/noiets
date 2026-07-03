@@ -394,7 +394,8 @@ final class MainWindowController: NSWindowController {
             guard let self else { return [] }
             let rows = (try? index.quickOpen(query)) ?? []
             return rows.map { row in
-                PalettePanel.Item(symbol: "doc.text", title: row.title, subtitle: row.relPath) {
+                PalettePanel.Item(symbol: nil, title: row.title, subtitle: row.relPath,
+                                  image: AppIcons.document(size: 14)) {
                     let url = self.session.url(forRelPath: row.relPath)
                     self.open(noteAt: url)
                     self.sidebarVC.select(url: url, notify: false)
@@ -446,7 +447,9 @@ final class MainWindowController: NSWindowController {
             commands
             .filter { q.isEmpty || $0.0.lowercased().contains(q) }
             .map { cmd in
-                PalettePanel.Item(symbol: cmd.1, title: cmd.0, subtitle: nil, action: cmd.2)
+                PalettePanel.Item(symbol: cmd.1, title: cmd.0, subtitle: nil,
+                                  image: cmd.1 == "trash" ? AppIcons.trash(size: 14) : nil,
+                                  action: cmd.2)
             }
     }
 }

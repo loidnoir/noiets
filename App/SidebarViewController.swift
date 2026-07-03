@@ -724,7 +724,8 @@ final class SidebarViewController: NSViewController {
                 folders
                 .filter { q.isEmpty || $0.title.lowercased().contains(q) }
                 .map { folder in
-                    PalettePanel.Item(symbol: "folder", title: folder.title, subtitle: nil) {
+                    PalettePanel.Item(symbol: nil, title: folder.title, subtitle: nil,
+                                      image: AppIcons.folder(size: 14)) {
                         guard let self else { return }
                         self.exitTreeVisual()
                         var lastMoved: URL?

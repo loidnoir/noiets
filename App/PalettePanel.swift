@@ -9,7 +9,17 @@ final class PalettePanel: NSPanel {
         let symbol: String?
         let title: String
         let subtitle: String?
+        var image: NSImage? // custom template icon; wins over `symbol`
         let action: @MainActor () -> Void
+
+        init(symbol: String?, title: String, subtitle: String?,
+             image: NSImage? = nil, action: @escaping @MainActor () -> Void) {
+            self.symbol = symbol
+            self.title = title
+            self.subtitle = subtitle
+            self.image = image
+            self.action = action
+        }
     }
 
     private let field = NSTextField()
@@ -256,7 +266,10 @@ private final class PaletteCellView: NSTableCellView {
         cell.identifier = reuseID
         cell.title.stringValue = item.title
         cell.subtitle.stringValue = item.subtitle ?? ""
-        if let symbol = item.symbol {
+        if let image = item.image {
+            cell.icon.image = image
+            cell.icon.isHidden = false
+        } else if let symbol = item.symbol {
             cell.icon.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
                 .withSymbolConfiguration(.init(pointSize: 13, weight: .regular))
             cell.icon.isHidden = false
