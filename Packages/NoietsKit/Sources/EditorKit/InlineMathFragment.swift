@@ -136,7 +136,7 @@ final class OverlayLineFragment: NSTextLayoutFragment {
                 let rect = CGRect(x: center.x - radius, y: center.y - radius,
                                   width: radius * 2, height: radius * 2)
                 if checked {
-                    theme.accentColor.setFill()
+                    theme.mutedColor.setFill()
                     NSBezierPath(ovalIn: rect).fill()
                 } else {
                     theme.accentColor.setStroke()

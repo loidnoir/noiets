@@ -41,6 +41,13 @@ public final class IncrementalHighlighter: NSObject {
     /// character indices intact.
     private static let collapsedFont = NSFont.systemFont(ofSize: 0.1)
 
+    /// Distance from a list marker's start (or the quote bar) to the text —
+    /// the one column every list style and quote body aligns to.
+    static func listTextInset(_ theme: EditorTheme) -> CGFloat {
+        let bold = NSFont.systemFont(ofSize: theme.baseFontSize, weight: .bold)
+        return ("- " as NSString).size(withAttributes: [.font: bold]).width + 4
+    }
+
     public init(theme: EditorTheme) {
         self.theme = theme
         super.init()
@@ -201,13 +208,12 @@ public final class IncrementalHighlighter: NSObject {
                 && activeParagraphRange.location >= line.range.location
                 && activeParagraphRange.location <= line.range.location + line.range.length)
         if !isActive {
-            // Rendered quotes indent to the list-text column ("> " collapses).
+            // Rendered quotes: the bar sits on the text column edge and the
+            // text indents to the shared list-text column.
             if case .blockquote = line.kind {
-                let indent = ("- " as NSString).size(withAttributes: [
-                    .font: NSFont.systemFont(ofSize: theme.baseFontSize, weight: .bold),
-                ]).width
                 let style = (theme.defaultParagraphStyle.mutableCopy() as? NSMutableParagraphStyle)
                     ?? NSMutableParagraphStyle()
+                let indent = Self.listTextInset(theme)
                 style.firstLineHeadIndent = indent
                 style.headIndent = indent
                 storage.addAttribute(.paragraphStyle, value: style, range: line.range)
@@ -285,33 +291,37 @@ public final class IncrementalHighlighter: NSObject {
                 }
             case .tagName:
                 link(token.range, noiets("tag", text.substring(with: token.range)))
-            case .listMarker(ordered: false):
-                // "- " collapses; a round dot draws in the reserved gap. On
-                // task rows the check circle is the marker, so the dash just
-                // collapses with no reserved width.
+            case .listMarker(let ordered):
+                // Every list style shares one text column (listTextInset from
+                // the marker start): bullets and tasks collapse into it,
+                // ordered numbers stay visible and pad up to it.
+                let inset = Self.listTextInset(theme)
+                let last = NSRange(location: token.range.location + token.range.length - 1,
+                                   length: 1)
+                let marker = text.substring(with: token.range) as NSString
+                if ordered {
+                    let medium = NSFont.systemFont(ofSize: theme.baseFontSize, weight: .medium)
+                    let kern = max(0, inset - marker.size(withAttributes: [.font: medium]).width)
+                    if kern > 0 { storage.addAttribute(.kern, value: kern, range: last) }
+                    break
+                }
                 hide(token.range)
                 let isTask = tokens.contains {
                     if case .taskMarker = $0.kind { return true }
                     return false
                 }
-                if isTask { break }
-                let bold = NSFont.systemFont(ofSize: theme.baseFontSize, weight: .bold)
-                let marker = text.substring(with: token.range) as NSString
-                let kern = max(0, marker.size(withAttributes: [.font: bold]).width
+                if isTask { break } // the check circle's reserve carries the column
+                let kern = max(0, inset
                     - marker.size(withAttributes: [.font: Self.collapsedFont]).width)
-                storage.addAttribute(.kern, value: kern,
-                                     range: NSRange(location: token.range.location + token.range.length - 1,
-                                                    length: 1))
+                storage.addAttribute(.kern, value: kern, range: last)
             case .taskMarker:
                 // "[ ]" / "[x]" collapses; a check circle draws in the gap.
-                // Reserve the footprint of a bullet row ("- " minus the real
-                // space that follows "]") so text starts align across lists.
+                // Reserve up to the shared column (minus the real space that
+                // follows "]") so task text aligns with the other lists.
                 hide(token.range)
-                let bold = NSFont.systemFont(ofSize: theme.baseFontSize, weight: .bold)
-                let dashWidth = ("- " as NSString).size(withAttributes: [.font: bold]).width
                 let spaceWidth = (" " as NSString).size(withAttributes: [.font: theme.baseFont]).width
                 let marker = text.substring(with: token.range) as NSString
-                let kern = max(0, dashWidth - spaceWidth
+                let kern = max(0, Self.listTextInset(theme) - spaceWidth
                     - marker.size(withAttributes: [.font: Self.collapsedFont]).width)
                 storage.addAttribute(.kern, value: kern,
                                      range: NSRange(location: token.range.location + token.range.length - 1,

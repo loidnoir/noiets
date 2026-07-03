@@ -30,7 +30,7 @@ enum MainMenu {
         file.addItem({ let i = NSMenuItem(title: "New Folder", action: Selector(("newFolder:")), keyEquivalent: "n")
                        i.keyEquivalentModifierMask = [.command, .shift]; return i }())
         file.addItem(.separator())
-        file.addItem(withTitle: "Save", action: Selector(("saveNote:")), keyEquivalent: "s")
+        file.addItem(withTitle: "Save", action: Selector(("saveNote:")), keyEquivalent: "")
         file.addItem(.separator())
         file.addItem({ let i = NSMenuItem(title: "Reveal in Finder", action: Selector(("revealInFinder:")), keyEquivalent: "r")
                        i.keyEquivalentModifierMask = [.command, .option]; return i }())
@@ -66,7 +66,7 @@ enum MainMenu {
 
         // View
         let view = NSMenu(title: "View")
-        view.addItem(withTitle: "Toggle Sidebar", action: Selector(("toggleSidebarPane:")), keyEquivalent: "0")
+        view.addItem(withTitle: "Toggle Sidebar", action: Selector(("toggleSidebarPane:")), keyEquivalent: "s")
         view.addItem({ let i = NSMenuItem(title: "Toggle Backlinks", action: Selector(("toggleRightPanel:")), keyEquivalent: "0")
                        i.keyEquivalentModifierMask = [.command, .option]; return i }())
         main.addItem(submenu(view, title: "View"))

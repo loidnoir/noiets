@@ -176,9 +176,13 @@ final class QuoteBarFragment: NSTextLayoutFragment {
     override func draw(at point: CGPoint, in context: CGContext) {
         context.saveGState()
         // The fragment origin follows the paragraph indent, so anchor the bar
-        // to the column start — it stays clear of the indented text.
-        let bar = CGRect(x: point.x - layoutFragmentFrame.minX, y: point.y,
-                         width: 3, height: layoutFragmentFrame.height)
+        // to the column start; center it on the glyphs' visual extent
+        // (mirrors theme.baseFont, which is MainActor-bound).
+        let font = NSFont.systemFont(ofSize: theme.baseFontSize)
+        let height = layoutFragmentFrame.height - theme.lineSpacing - 2
+        let top = point.y + (font.ascender - font.capHeight / 2) - height / 2
+        let bar = CGRect(x: point.x - layoutFragmentFrame.minX,
+                         y: max(point.y, top), width: 3, height: height)
         context.addPath(CGPath(roundedRect: bar, cornerWidth: 1.5, cornerHeight: 1.5,
                                transform: nil))
         context.setFillColor(theme.mutedColor.withAlphaComponent(0.5).cgColor)

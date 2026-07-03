@@ -455,6 +455,35 @@ private func type(_ engine: VimEngine, _ target: MockTarget, _ text: String) {
 
 @MainActor
 @Suite struct VisualTests {
+    @Test func tabIndentsSelectedLines() {
+        let (e, t) = makeEngine("one\ntwo\nthree", caret: 0)
+        send(e, "vj") // select across lines 1–2
+        _ = e.handleKey(VimKey(characters: "\t"))
+        #expect(t.buffer as String == "    one\n    two\nthree")
+        // Selection stays on the shifted lines — Tab again keeps working.
+        _ = e.handleKey(VimKey(characters: "\t"))
+        #expect(t.buffer as String == "        one\n        two\nthree")
+        // Shift-Tab (^Y) dedents one level.
+        _ = e.handleKey(VimKey(characters: "\u{19}"))
+        #expect(t.buffer as String == "    one\n    two\nthree")
+        _ = e.handleKey(VimKey(characters: "\u{19}"))
+        #expect(t.buffer as String == "one\ntwo\nthree")
+        // Dedent at column zero is a no-op.
+        _ = e.handleKey(VimKey(characters: "\u{19}"))
+        #expect(t.buffer as String == "one\ntwo\nthree")
+        #expect(e.mode != .insert) // still in visual, not typing
+    }
+
+    @Test func tabIndentSkipsEmptyLinesAndUndoesAsOneStep() {
+        let (e, t) = makeEngine("a\n\nb", caret: 0)
+        send(e, "vjj")
+        _ = e.handleKey(VimKey(characters: "\t"))
+        #expect(t.buffer as String == "    a\n\n    b")
+        _ = e.handleKey(VimKey(characters: "", isEscape: true))
+        send(e, "u")
+        #expect(t.buffer as String == "a\n\nb")
+    }
+
     @Test func charwiseSelectAndDelete() {
         let (e, t) = makeEngine("hello world", caret: 0)
         send(e, "ve")

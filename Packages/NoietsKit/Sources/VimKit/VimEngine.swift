@@ -166,6 +166,13 @@ public final class VimEngine {
         }
         if !isReplaying { sequence.append(key) }
 
+        // Visual-mode Tab / Shift-Tab (^Y): shift the selected lines.
+        if isVisual, key.characters == "\t" || key.characters == "\u{19}" {
+            shiftSelectedLines(right: key.characters == "\t")
+            statusUpdate()
+            return true
+        }
+
         if key.hasControl {
             switch key.characters {
             case "r":
@@ -879,6 +886,65 @@ public final class VimEngine {
 
     private func caretForVisualExit() -> Int {
         min(visualHead, maxCaret)
+    }
+
+    /// Visual Tab / Shift-Tab: indent or dedent every selected line by one
+    /// level (4 spaces), then keep the visual selection on those lines so
+    /// repeated presses keep shifting the same chunk.
+    private func shiftSelectedLines(right: Bool) {
+        guard let target else { return }
+        let span = target.text.lineRange(for: target.selection)
+
+        var starts: [Int] = []
+        var i = span.location
+        while i < span.location + span.length {
+            starts.append(i)
+            let line = target.text.lineRange(for: NSRange(location: i, length: 0))
+            let next = line.location + line.length
+            if next <= i { break }
+            i = next
+        }
+        if starts.isEmpty { starts = [span.location] }
+
+        target.beginUndoGroup()
+        for start in starts.reversed() { // back to front keeps earlier offsets valid
+            let t = target.text
+            if right {
+                let line = t.lineRange(for: NSRange(location: start, length: 0))
+                // vim skips empty lines when indenting
+                if t.substring(with: line)
+                    .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { continue }
+                target.replace(NSRange(location: start, length: 0), with: "    ")
+            } else {
+                var n = 0
+                if start < t.length, t.character(at: start) == 9 { // a tab
+                    n = 1
+                } else {
+                    while start + n < t.length, n < 4,
+                          t.character(at: start + n) == unichar(UInt8(ascii: " ")) {
+                        n += 1
+                    }
+                }
+                if n > 0 { target.replace(NSRange(location: start, length: n), with: "") }
+            }
+        }
+        target.endUndoGroup()
+
+        // Re-cover the shifted lines.
+        let t = target.text
+        var end = span.location
+        for _ in starts {
+            guard end < t.length else { break }
+            let line = t.lineRange(for: NSRange(location: end, length: 0))
+            end = line.location + line.length
+        }
+        var selEnd = end
+        if selEnd > span.location, selEnd - 1 < t.length,
+           t.character(at: selEnd - 1) == unichar(UInt8(ascii: "\n")) {
+            selEnd -= 1
+        }
+        visualAnchor = span.location
+        updateVisualSelection(head: max(span.location, selEnd - 1))
     }
 
     // MARK: - Search
