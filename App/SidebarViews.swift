@@ -12,8 +12,23 @@ final class SoftRowView: NSTableRowView {
         guard isSelected else { return }
         let rect = bounds.insetBy(dx: 10, dy: 2)
         let path = NSBezierPath(roundedRect: rect, xRadius: 7, yRadius: 7)
-        UITheme.sidebarSelection.setFill()
+        // Accent tint while the enclosing list has keyboard focus — this is
+        // the pane-focus indicator.
+        var container: NSView? = superview
+        while container != nil, !(container is NSTableView) {
+            container = container?.superview
+        }
+        let focused = container != nil && window?.firstResponder === container
+        (focused ? UITheme.sidebarSelectionFocused : UITheme.sidebarSelection).setFill()
         path.fill()
+    }
+}
+
+/// Repaints row selections when keyboard focus enters/leaves the list, so
+/// the focus tint updates immediately.
+private func repaintSelections(of table: NSTableView) {
+    table.enumerateAvailableRowViews { rowView, _ in
+        rowView.needsDisplay = true
     }
 }
 
@@ -41,6 +56,18 @@ final class SidebarOutlineView: NSOutlineView {
             return
         }
         super.keyDown(with: event)
+    }
+
+    override func becomeFirstResponder() -> Bool {
+        let ok = super.becomeFirstResponder()
+        if ok { repaintSelections(of: self) }
+        return ok
+    }
+
+    override func resignFirstResponder() -> Bool {
+        let ok = super.resignFirstResponder()
+        if ok { repaintSelections(of: self) }
+        return ok
     }
 }
 
@@ -259,6 +286,18 @@ final class VimTableView: NSTableView {
             return
         }
         super.keyDown(with: event)
+    }
+
+    override func becomeFirstResponder() -> Bool {
+        let ok = super.becomeFirstResponder()
+        if ok { repaintSelections(of: self) }
+        return ok
+    }
+
+    override func resignFirstResponder() -> Bool {
+        let ok = super.resignFirstResponder()
+        if ok { repaintSelections(of: self) }
+        return ok
     }
 }
 

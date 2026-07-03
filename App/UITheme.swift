@@ -13,6 +13,12 @@ enum UITheme {
         light: NSColor(white: 0.9, alpha: 1),
         dark: NSColor(white: 0.24, alpha: 1)
     )
+    /// Selection pill while its list owns the keyboard — the pane-focus
+    /// indicator (quiet accent tint, not the system blue).
+    static let sidebarSelectionFocused = dynamic(
+        light: NSColor(red: 0.13, green: 0.42, blue: 0.95, alpha: 0.22),
+        dark: NSColor(red: 0.35, green: 0.58, blue: 1.0, alpha: 0.28)
+    )
     static let modeBarBackground = dynamic(
         light: NSColor(white: 0.93, alpha: 1),
         dark: NSColor(white: 0.19, alpha: 1)

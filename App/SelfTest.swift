@@ -446,8 +446,10 @@ enum SelfTest {
                 keyTo(list, "j")
                 keyTo(list, "k")
                 result["recentJKMoves"] = list.selectedRow == 0
-                keyTo(list, "\u{1B}", keyCode: 53) // esc → tree
-                result["escBackToTree"] = focusedOutline() != nil
+                keyTo(list, "\u{1B}", keyCode: 53) // esc must NOT eject from the list
+                result["escStaysInList"] = window.firstResponder === list
+                keyTo(list, "h", control: true) // ⌃h is the way back to the tree
+                result["ctrlHBackToTree"] = focusedOutline() != nil
                 if let o = focusedOutline() {
                     keyTo(o, "\r", keyCode: 36) // selection still on Recent → reopen
                 }

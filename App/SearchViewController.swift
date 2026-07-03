@@ -192,9 +192,8 @@ final class SearchViewController: NSViewController {
             }
             return false
         }
-        if event.keyCode == 53 { // esc
+        if event.keyCode == 53 { // esc: cancel pending chord, stay in the list
             pendingKey = nil
-            onFocusSidebar?()
             return true
         }
         if event.keyCode == 36 || event.keyCode == 76 { // return
@@ -261,7 +260,7 @@ extension SearchViewController: NSSearchFieldDelegate {
             focusList()
             return true
         case #selector(NSResponder.cancelOperation(_:)):
-            onFocusSidebar?()
+            focusList() // esc leaves the field but stays in this view
             return true
         default:
             return false

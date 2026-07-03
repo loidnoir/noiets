@@ -172,9 +172,8 @@ final class TrashViewController: NSViewController {
             }
             return false
         }
-        if event.keyCode == 53 { // esc
+        if event.keyCode == 53 { // esc: cancel pending chord, stay in the list
             pendingKey = nil
-            onFocusSidebar?()
             return true
         }
         if event.keyCode == 36 || event.keyCode == 76 { // return = restore

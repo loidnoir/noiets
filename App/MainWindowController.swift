@@ -139,6 +139,7 @@ final class MainWindowController: NSWindowController {
         }
 
         session.startIndexing()
+        startObservingFocus()
 
         if ProcessInfo.processInfo.environment["NOIETS_SHOW_INSPECTOR"] == "1" {
             inspector.isCollapsed = false
@@ -259,7 +260,29 @@ final class MainWindowController: NSWindowController {
 
     private var vimStatusSuffix = ""
 
+    private var responderObservation: NSKeyValueObservation?
+
+    /// The mode bar doubles as the pane indicator: TREE / LIST while a list
+    /// owns the keyboard, the vim mode while the editor does.
+    private func startObservingFocus() {
+        responderObservation = window?.observe(\.firstResponder) { [weak self] _, _ in
+            MainActor.assumeIsolated {
+                self?.updateVimBar(mode: nil)
+            }
+        }
+    }
+
     private func updateVimBar(mode: VimMode?) {
+        if let responder = window?.firstResponder {
+            if responder is NSOutlineView {
+                sidebarVC.setVimStatus("TREE")
+                return
+            }
+            if responder is NSTableView {
+                sidebarVC.setVimStatus("LIST")
+                return
+            }
+        }
         let current = mode ?? editorVC.editor.vim.mode
         let text =
             vimStatusSuffix.isEmpty
