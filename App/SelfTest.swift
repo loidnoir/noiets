@@ -487,6 +487,24 @@ enum SelfTest {
         if let o = focusedOutline() { keyTo(o, "l", control: true) }
         result["ctrlLBackToEditor"] = inTree && window.firstResponder === tv
 
+        // Tree visual mode: v anchors, j extends (files only), esc collapses
+        // to the cursor but stays in the tree.
+        keyTo(tv, "h", control: true)
+        if let outline = focusedOutline() {
+            keyTo(outline, "g")
+            keyTo(outline, "g")
+            keyTo(outline, "4")
+            keyTo(outline, "j") // onto the first tree node
+            keyTo(outline, "v")
+            keyTo(outline, "j")
+            result["visualSelectsTwo"] = outline.selectedRowIndexes.count == 2
+            keyTo(outline, "j")
+            result["visualExtendsThree"] = outline.selectedRowIndexes.count == 3
+            keyTo(outline, "\u{1B}", keyCode: 53) // esc → collapse, stay in tree
+            result["visualEscCollapses"] = outline.selectedRowIndexes.count == 1
+                && window.firstResponder === outline
+        }
+
         // Recent view: Enter on the fixed row focuses its LIST; j/k navigate;
         // Enter opens a note (back to the editor); Esc returns to the tree.
         keyTo(tv, "h", control: true)

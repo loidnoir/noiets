@@ -98,6 +98,7 @@ final class SidebarViewController: NSViewController {
         outlineView.indentationPerLevel = 22
         outlineView.autoresizesOutlineColumn = false
         outlineView.allowsEmptySelection = true
+        outlineView.allowsMultipleSelection = true // tree visual mode (v)
         outlineView.dataSource = self
         outlineView.delegate = self
         outlineView.menu = buildContextMenu()
@@ -299,6 +300,12 @@ final class SidebarViewController: NSViewController {
     private var pendingTreeKey: Character? // for dd / gg chords
     private var treeCount = 0 // count multiplier (5j, 3k, NG…)
 
+    // Tree visual mode: v anchors, j/k extend, dd/r/m act on the selection.
+    private var treeVisualAnchor: Int?
+    private var treeVisualCursor = 0
+
+    private var isTreeVisual: Bool { treeVisualAnchor != nil }
+
     /// Focuses the tree, ensuring something is selected for j/k to move from.
     func focusTree() {
         _ = view // ensure loaded
@@ -324,12 +331,17 @@ final class SidebarViewController: NSViewController {
         if event.keyCode == 53 { // esc
             pendingTreeKey = nil
             clearTreeCount()
-            onFocusEditor?()
+            if isTreeVisual {
+                exitTreeVisual() // first esc leaves visual, second leaves the tree
+            } else {
+                onFocusEditor?()
+            }
             return true
         }
         if event.keyCode == 36 || event.keyCode == 76 { // return
             pendingTreeKey = nil
             clearTreeCount()
+            if isTreeVisual { exitTreeVisual() }
             activateSelectedRow()
             return true
         }
@@ -366,16 +378,37 @@ final class SidebarViewController: NSViewController {
         }
 
         switch ch {
+        case "v":
+            if isTreeVisual {
+                exitTreeVisual()
+            } else if outlineView.selectedRow >= 0 {
+                treeVisualAnchor = outlineView.selectedRow
+                treeVisualCursor = outlineView.selectedRow
+                applyTreeVisualSelection()
+                setVimStatus("TREE VISUAL")
+            }
         case "j":
-            moveSelection(from: outlineView.selectedRow, direction: 1, steps: count)
+            if isTreeVisual {
+                extendTreeVisual(direction: 1, steps: count)
+            } else {
+                moveSelection(from: outlineView.selectedRow, direction: 1, steps: count)
+            }
         case "k":
-            moveSelection(from: outlineView.selectedRow, direction: -1, steps: count)
+            if isTreeVisual {
+                extendTreeVisual(direction: -1, steps: count)
+            } else {
+                moveSelection(from: outlineView.selectedRow, direction: -1, steps: count)
+            }
         case "l":
+            if isTreeVisual { exitTreeVisual() }
             expandOrOpenSelected()
         case "h":
+            if isTreeVisual { exitTreeVisual() }
             for _ in 0..<count { collapseOrParentSelected() }
         case "G":
-            if hadCount {
+            if isTreeVisual {
+                extendTreeVisual(direction: 1, steps: outlineView.numberOfRows)
+            } else if hadCount {
                 selectNthSelectableRow(count)
             } else {
                 moveSelection(from: outlineView.numberOfRows, direction: -1)
@@ -387,8 +420,10 @@ final class SidebarViewController: NSViewController {
         case "m":
             moveSelectedViaPicker()
         case "a":
+            if isTreeVisual { exitTreeVisual() }
             createNoteAtSelection()
         case "A":
+            if isTreeVisual { exitTreeVisual() }
             createFolderAtSelection()
         case "R":
             session.rescan()
@@ -396,6 +431,66 @@ final class SidebarViewController: NSViewController {
             return false
         }
         return true
+    }
+
+    // MARK: Tree visual mode
+
+    private func exitTreeVisual() {
+        guard isTreeVisual else { return }
+        treeVisualAnchor = nil
+        setVimStatus("TREE")
+        let cursor = min(max(treeVisualCursor, 0), max(outlineView.numberOfRows - 1, 0))
+        suppressSelectionCallback = true
+        outlineView.selectRowIndexes(IndexSet(integer: cursor), byExtendingSelection: false)
+        suppressSelectionCallback = false
+    }
+
+    private func extendTreeVisual(direction: Int, steps: Int) {
+        var cursor = treeVisualCursor
+        var remaining = max(steps, 1)
+        while remaining > 0 {
+            var next = cursor + direction
+            var found = false
+            while next >= 0, next < outlineView.numberOfRows {
+                if let item = outlineView.item(atRow: next) as? Item,
+                   case .separator = item.kind {
+                    next += direction
+                    continue
+                }
+                found = true
+                break
+            }
+            if !found { break }
+            cursor = next
+            remaining -= 1
+        }
+        treeVisualCursor = cursor
+        applyTreeVisualSelection()
+    }
+
+    /// Selects the contiguous anchor…cursor range (file/folder rows only).
+    private func applyTreeVisualSelection() {
+        guard let anchor = treeVisualAnchor else { return }
+        let lo = min(anchor, treeVisualCursor)
+        let hi = max(anchor, treeVisualCursor)
+        var set = IndexSet()
+        for row in lo...hi {
+            if let item = outlineView.item(atRow: row) as? Item, item.fileNode != nil {
+                set.insert(row)
+            }
+        }
+        guard !set.isEmpty else { return }
+        suppressSelectionCallback = true
+        outlineView.selectRowIndexes(set, byExtendingSelection: false)
+        suppressSelectionCallback = false
+        outlineView.scrollRowToVisible(treeVisualCursor)
+    }
+
+    /// All file/folder nodes in the selection, in row order.
+    private var selectedFileNodes: [FileNode] {
+        outlineView.selectedRowIndexes.compactMap {
+            (outlineView.item(atRow: $0) as? Item)?.fileNode
+        }
     }
 
     private func clearTreeCount() {
@@ -515,18 +610,33 @@ final class SidebarViewController: NSViewController {
     }
 
     private func confirmTrashSelected() {
-        guard let node = selectedItem?.fileNode, let window = view.window else { return }
+        let nodes = selectedFileNodes
+        guard !nodes.isEmpty, let window = view.window else { return }
         let alert = NSAlert()
-        alert.messageText = "Move “\(node.title)” to Trash?"
-        alert.informativeText = node.isFolder
-            ? "The folder and everything inside it moves to the vault’s .trash."
-            : "The note moves to the vault’s .trash and can be restored from there."
+        if nodes.count == 1 {
+            let node = nodes[0]
+            alert.messageText = "Move “\(node.title)” to Trash?"
+            alert.informativeText = node.isFolder
+                ? "The folder and everything inside it moves to the vault’s .trash."
+                : "The note moves to the vault’s .trash and can be restored from there."
+        } else {
+            alert.messageText = "Move \(nodes.count) items to Trash?"
+            let names = nodes.prefix(5).map(\.title).joined(separator: ", ")
+            alert.informativeText = nodes.count > 5 ? "\(names), …" : names
+        }
         alert.addButton(withTitle: "Move to Trash")
         alert.addButton(withTitle: "Cancel")
-        let row = outlineView.selectedRow
+        let row = outlineView.selectedRowIndexes.first ?? outlineView.selectedRow
         alert.beginSheetModal(for: window) { [weak self] response in
-            guard let self, response == .alertFirstButtonReturn else { return }
-            self.session.trashNote(node.url)
+            guard let self else { return }
+            self.exitTreeVisual()
+            guard response == .alertFirstButtonReturn else {
+                self.focusTree()
+                return
+            }
+            for node in nodes {
+                self.session.trashNote(node.url)
+            }
             if self.session.currentNoteURL == nil {
                 self.onCurrentNoteRemoved?()
             }
@@ -536,21 +646,44 @@ final class SidebarViewController: NSViewController {
     }
 
     private func renameSelected() {
-        guard let node = selectedItem?.fileNode, let window = view.window else { return }
+        let nodes = selectedFileNodes
+        guard !nodes.isEmpty, let window = view.window else { return }
         let alert = NSAlert()
-        alert.messageText = "Rename “\(node.title)”"
+        let batch = nodes.count > 1
+        if batch {
+            alert.messageText = "Rename \(nodes.count) items"
+            alert.informativeText = "They become name-1, name-2, … in list order."
+        } else {
+            alert.messageText = "Rename “\(nodes[0].title)”"
+        }
         alert.addButton(withTitle: "Rename")
         alert.addButton(withTitle: "Cancel")
-        let field = NSTextField(string: node.title)
+        let field = NSTextField(string: batch ? "" : nodes[0].title)
+        field.placeholderString = batch ? "base name" : nil
         field.frame = NSRect(x: 0, y: 0, width: 240, height: 24)
         alert.accessoryView = field
         alert.window.initialFirstResponder = field
         alert.beginSheetModal(for: window) { [weak self] response in
-            guard let self, response == .alertFirstButtonReturn else {
-                self?.focusTree()
+            guard let self else { return }
+            self.exitTreeVisual()
+            guard response == .alertFirstButtonReturn else {
+                self.focusTree()
                 return
             }
-            if let renamed = self.session.rename(node.url, to: field.stringValue) {
+            let base = field.stringValue.trimmingCharacters(in: .whitespaces)
+            guard !base.isEmpty else {
+                self.focusTree()
+                return
+            }
+            if batch {
+                var failures = 0
+                for (index, node) in nodes.enumerated() {
+                    if self.session.rename(node.url, to: "\(base)-\(index + 1)") == nil {
+                        failures += 1
+                    }
+                }
+                if failures > 0 { NSSound.beep() }
+            } else if let renamed = self.session.rename(nodes[0].url, to: base) {
                 self.select(url: renamed, notify: false)
             } else {
                 NSSound.beep()
@@ -560,24 +693,36 @@ final class SidebarViewController: NSViewController {
     }
 
     private func moveSelectedViaPicker() {
-        guard let node = selectedItem?.fileNode, let window = view.window else { return }
-        let source = node.url
+        let nodes = selectedFileNodes
+        guard !nodes.isEmpty, let window = view.window else { return }
+        let sources = nodes.map(\.url)
         let folders = session.allFolders().filter { folder in
-            // Exclude the item itself / its own subtree and its current parent.
-            folder.url.standardizedFileURL != source.standardizedFileURL
-                && !folder.url.path.hasPrefix(source.path + "/")
-                && folder.url.standardizedFileURL != source.deletingLastPathComponent().standardizedFileURL
+            // Exclude any source itself and anything inside a source.
+            !sources.contains { source in
+                folder.url.standardizedFileURL == source.standardizedFileURL
+                    || folder.url.path.hasPrefix(source.path + "/")
+            }
         }
-        PalettePanel.shared.present(over: window, placeholder: "Move “\(node.title)” to…") { [weak self] query in
+        let title = nodes.count == 1 ? "Move “\(nodes[0].title)” to…" : "Move \(nodes.count) items to…"
+        PalettePanel.shared.present(over: window, placeholder: title) { [weak self] query in
             let q = query.lowercased()
             return folders
                 .filter { q.isEmpty || $0.title.lowercased().contains(q) }
                 .map { folder in
                     PalettePanel.Item(symbol: "folder", title: folder.title, subtitle: nil) {
-                        if let moved = self?.session.moveItem(at: source, into: folder.url) {
-                            self?.select(url: moved, notify: false)
+                        guard let self else { return }
+                        self.exitTreeVisual()
+                        var lastMoved: URL?
+                        for source in sources {
+                            if let moved = self.session.moveItem(at: source, into: folder.url) {
+                                lastMoved = moved
+                            }
                         }
-                        self?.focusTree()
+                        if let lastMoved {
+                            self.expandedURLs.insert(folder.url)
+                            self.select(url: lastMoved, notify: false)
+                        }
+                        self.focusTree()
                     }
                 }
         }
