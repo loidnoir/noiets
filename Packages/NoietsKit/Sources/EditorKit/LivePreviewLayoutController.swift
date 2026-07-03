@@ -139,23 +139,35 @@ public final class LivePreviewLayoutController: NSObject {
         }
     }
 
-    /// Marker-content-marker math runs of a line, as fragment-relative spans
-    /// paired with their rendered images. Mirrors the highlighter's collapse
-    /// rule — a span appears here iff its width was reserved there.
+    /// Marker-content-marker runs of a line — inline math and inline-code
+    /// chips — as fragment-relative spans. Mirrors the highlighter's collapse
+    /// rule: a span appears here iff its width was reserved there.
     private func inlineMathSpans(
         tokens: [Token], text: NSString, base: Int
     ) -> [OverlayLineFragment.Span] {
         var spans: [OverlayLineFragment.Span] = []
         for (i, token) in tokens.enumerated() {
-            guard case .mathContent(let display) = token.kind,
-                  i > 0, i + 1 < tokens.count,
-                  tokens[i - 1].kind == .mathMarker,
-                  tokens[i + 1].kind == .mathMarker,
-                  let image = InlineMath.image(latex: text.substring(with: token.range),
-                                               display: display, theme: theme)
-            else { continue }
-            spans.append(.init(relativeLocation: tokens[i - 1].range.location - base,
-                               kind: .image(image)))
+            switch token.kind {
+            case .mathContent(let display):
+                guard i > 0, i + 1 < tokens.count,
+                      tokens[i - 1].kind == .mathMarker,
+                      tokens[i + 1].kind == .mathMarker,
+                      let image = InlineMath.image(latex: text.substring(with: token.range),
+                                                   display: display, theme: theme)
+                else { continue }
+                spans.append(.init(relativeLocation: tokens[i - 1].range.location - base,
+                                   kind: .image(image)))
+            case .inlineCode:
+                guard i > 0, i + 1 < tokens.count,
+                      tokens[i - 1].kind == .inlineCodeMarker,
+                      tokens[i + 1].kind == .inlineCodeMarker else { continue }
+                let content = (text.substring(with: token.range) as NSString)
+                    .size(withAttributes: [.font: theme.monoFont]).width
+                spans.append(.init(relativeLocation: tokens[i - 1].range.location - base,
+                                   kind: .chip(width: content + OverlayLineFragment.chipPadding * 2)))
+            default:
+                continue
+            }
         }
         return spans
     }

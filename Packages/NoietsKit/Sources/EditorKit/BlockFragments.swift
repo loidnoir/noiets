@@ -169,13 +169,20 @@ final class QuoteBarFragment: NSTextLayoutFragment {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override var renderingSurfaceBounds: CGRect {
-        super.renderingSurfaceBounds.union(CGRect(x: -6, y: 0, width: 8, height: layoutFragmentFrame.height))
+        super.renderingSurfaceBounds.union(
+            CGRect(x: -24, y: 0, width: 28, height: layoutFragmentFrame.height))
     }
 
     override func draw(at point: CGPoint, in context: CGContext) {
         context.saveGState()
+        // The fragment origin follows the paragraph indent, so anchor the bar
+        // to the column start — it stays clear of the indented text.
+        let bar = CGRect(x: point.x - layoutFragmentFrame.minX, y: point.y,
+                         width: 3, height: layoutFragmentFrame.height)
+        context.addPath(CGPath(roundedRect: bar, cornerWidth: 1.5, cornerHeight: 1.5,
+                               transform: nil))
         context.setFillColor(theme.mutedColor.withAlphaComponent(0.5).cgColor)
-        context.fill(CGRect(x: point.x - 4, y: point.y, width: 3, height: layoutFragmentFrame.height))
+        context.fillPath()
         context.restoreGState()
         super.draw(at: point, in: context)
     }

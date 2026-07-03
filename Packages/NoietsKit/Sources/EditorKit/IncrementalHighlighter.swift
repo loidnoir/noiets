@@ -172,6 +172,9 @@ public final class IncrementalHighlighter: NSObject {
             if line.contentRange.length > 0 {
                 storage.addAttribute(.font, value: theme.monoFont, range: line.contentRange)
             }
+        case .blockquote:
+            // Quotes read quieter than body text.
+            storage.addAttribute(.foregroundColor, value: theme.mutedColor, range: line.range)
         default:
             break
         }
@@ -198,6 +201,17 @@ public final class IncrementalHighlighter: NSObject {
                 && activeParagraphRange.location >= line.range.location
                 && activeParagraphRange.location <= line.range.location + line.range.length)
         if !isActive {
+            // Rendered quotes indent to the list-text column ("> " collapses).
+            if case .blockquote = line.kind {
+                let indent = ("- " as NSString).size(withAttributes: [
+                    .font: NSFont.systemFont(ofSize: theme.baseFontSize, weight: .bold),
+                ]).width
+                let style = (theme.defaultParagraphStyle.mutableCopy() as? NSMutableParagraphStyle)
+                    ?? NSMutableParagraphStyle()
+                style.firstLineHeadIndent = indent
+                style.headIndent = indent
+                storage.addAttribute(.paragraphStyle, value: style, range: line.range)
+            }
             // Math collapses only on lines whose fragment draws overlays
             // (OverlayLineFragment); elsewhere it stays styled source.
             let collapseMath: Bool
@@ -228,6 +242,18 @@ public final class IncrementalHighlighter: NSObject {
         }
 
         for (index, token) in tokens.enumerated() {
+            if case .inlineCodeMarker = token.kind {
+                // Backticks go invisible and shrink to the chip's side
+                // padding; the rounded chip itself is drawn behind the span
+                // by OverlayLineFragment.
+                storage.addAttribute(.foregroundColor, value: NSColor.clear, range: token.range)
+                let advance = ("`" as NSString)
+                    .size(withAttributes: [.font: theme.monoFont]).width
+                storage.addAttribute(.kern,
+                                     value: OverlayLineFragment.chipPadding - advance,
+                                     range: token.range)
+                continue
+            }
             if token.kind.hiddenInPreview {
                 hide(token.range)
                 continue
@@ -278,9 +304,14 @@ public final class IncrementalHighlighter: NSObject {
                                                     length: 1))
             case .taskMarker:
                 // "[ ]" / "[x]" collapses; a check circle draws in the gap.
+                // Reserve the footprint of a bullet row ("- " minus the real
+                // space that follows "]") so text starts align across lists.
                 hide(token.range)
+                let bold = NSFont.systemFont(ofSize: theme.baseFontSize, weight: .bold)
+                let dashWidth = ("- " as NSString).size(withAttributes: [.font: bold]).width
+                let spaceWidth = (" " as NSString).size(withAttributes: [.font: theme.baseFont]).width
                 let marker = text.substring(with: token.range) as NSString
-                let kern = max(0, marker.size(withAttributes: [.font: theme.monoFont]).width
+                let kern = max(0, dashWidth - spaceWidth
                     - marker.size(withAttributes: [.font: Self.collapsedFont]).width)
                 storage.addAttribute(.kern, value: kern,
                                      range: NSRange(location: token.range.location + token.range.length - 1,
@@ -288,10 +319,16 @@ public final class IncrementalHighlighter: NSObject {
             case .blockquoteMarker:
                 hide(token.range) // the quote bar carries the meaning
             case .codeFenceDelimiter:
-                // The backticks hide; the language name stays as the block's
-                // label. Entering the block reveals the raw fences.
-                hide(NSRange(location: token.range.location,
-                             length: min(3, token.range.length)))
+                // Backticks go invisible with zero advance (negative kern),
+                // keeping the mono font so the fence lines never change
+                // height — the language label sits at the line start, and
+                // the caret inside the block reveals the raw fences.
+                let ticks = NSRange(location: token.range.location,
+                                    length: min(3, token.range.length))
+                storage.addAttribute(.foregroundColor, value: NSColor.clear, range: ticks)
+                let advance = ("`" as NSString)
+                    .size(withAttributes: [.font: theme.monoFont]).width
+                storage.addAttribute(.kern, value: -advance, range: ticks)
             case .mathContent(let display):
                 // Inline $…$ / $$…$$: collapse the whole span and reserve the
                 // typeset image's width with a kern on the closing marker; the
@@ -345,7 +382,6 @@ public final class IncrementalHighlighter: NSObject {
         case .inlineCode:
             storage.addAttribute(.font, value: theme.monoFont, range: range)
             storage.addAttribute(.foregroundColor, value: theme.mutedColor, range: range)
-            storage.addAttribute(.backgroundColor, value: theme.codeBackground, range: range)
         case .inlineCodeMarker:
             storage.addAttribute(.font, value: theme.monoFont, range: range)
             storage.addAttribute(.foregroundColor, value: theme.mutedColor, range: range)

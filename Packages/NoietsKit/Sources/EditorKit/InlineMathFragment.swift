@@ -31,7 +31,10 @@ final class OverlayLineFragment: NSTextLayoutFragment {
         case image(NSImage)
         case bullet
         case checkbox(checked: Bool)
+        case chip(width: CGFloat) // rounded background behind an inline-code span
     }
+
+    nonisolated static let chipPadding: CGFloat = 3
 
     struct Span {
         let relativeLocation: Int // span start, relative to the element start
@@ -51,26 +54,51 @@ final class OverlayLineFragment: NSTextLayoutFragment {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override var renderingSurfaceBounds: CGRect {
-        // Tall math images (fractions, sums) can exceed the line box.
+        // Tall math images (fractions, sums) can exceed the line box, and a
+        // check circle can poke slightly left of the fragment.
         let maxHeight = spans.compactMap { span -> CGFloat? in
             if case .image(let image) = span.kind { return image.size.height }
             return nil
         }.max() ?? 0
-        return super.renderingSurfaceBounds.insetBy(dx: 0, dy: -maxHeight)
+        return super.renderingSurfaceBounds.insetBy(dx: -8, dy: -maxHeight)
+    }
+
+    private func lineFragment(containing location: Int) -> NSTextLineFragment? {
+        textLineFragments.first { $0.characterRange.contains(location) }
     }
 
     override func draw(at point: CGPoint, in context: CGContext) {
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
+        // Chip backgrounds go under the glyphs.
+        for span in spans {
+            guard case .chip(let width) = span.kind,
+                  let line = lineFragment(containing: span.relativeLocation) else { continue }
+            let anchor = line.locationForCharacter(at: span.relativeLocation)
+            let bounds = line.typographicBounds
+            let height = bounds.height - 5
+            let rect = CGRect(
+                x: point.x + bounds.origin.x + anchor.x,
+                y: point.y + bounds.origin.y + (bounds.height - height) / 2,
+                width: width, height: height
+            )
+            theme.codeBackground.setFill()
+            NSBezierPath(roundedRect: rect, xRadius: 4, yRadius: 4).fill()
+        }
+        NSGraphicsContext.restoreGraphicsState()
+
         super.draw(at: point, in: context)
+
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
         for span in spans {
-            guard let line = textLineFragments.first(where: {
-                $0.characterRange.contains(span.relativeLocation)
-            }) else { continue }
+            guard let line = lineFragment(containing: span.relativeLocation) else { continue }
             let anchor = line.locationForCharacter(at: span.relativeLocation)
             let bounds = line.typographicBounds
 
             switch span.kind {
+            case .chip:
+                break // drawn above, under the glyphs
             case .image(let image):
                 let size = image.size
                 let rect = CGRect(
@@ -95,21 +123,20 @@ final class OverlayLineFragment: NSTextLayoutFragment {
                 NSBezierPath(ovalIn: CGRect(x: center.x - radius, y: center.y - radius,
                                             width: radius * 2, height: radius * 2)).fill()
             case .checkbox(let checked):
-                // Centered in the hidden "[ ]" span: open = outline, done = fill.
-                // (theme.monoFont is computed and MainActor-bound; mirror it.)
-                let mono = NSFont.monospacedSystemFont(ofSize: theme.baseFontSize - 1.5,
-                                                       weight: .regular)
-                let spanWidth = ("[ ]" as NSString)
-                    .size(withAttributes: [.font: mono]).width
+                // Centered exactly where a bullet dot sits, so the marker
+                // column and text starts line up across list styles.
+                let dashWidth = ("-" as NSString)
+                    .size(withAttributes: [.font: NSFont.systemFont(ofSize: theme.baseFontSize,
+                                                                    weight: .bold)]).width
                 let radius: CGFloat = theme.baseFontSize * 0.31
                 let center = CGPoint(
-                    x: point.x + bounds.origin.x + anchor.x + spanWidth / 2,
+                    x: point.x + bounds.origin.x + anchor.x + dashWidth / 2,
                     y: point.y + bounds.origin.y + bounds.height / 2
                 )
                 let rect = CGRect(x: center.x - radius, y: center.y - radius,
                                   width: radius * 2, height: radius * 2)
                 if checked {
-                    theme.mutedColor.setFill()
+                    theme.accentColor.setFill()
                     NSBezierPath(ovalIn: rect).fill()
                 } else {
                     theme.accentColor.setStroke()
