@@ -1,4 +1,5 @@
 import AppKit
+import Sparkle
 import VaultStore
 
 @main
@@ -21,6 +22,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var windowController: MainWindowController?
     private var session: VaultSession?
 
+    /// Sparkle auto-updater: checks the GitHub-hosted appcast in the
+    /// background and offers updates in place.
+    private let updaterController = SPUStandardUpdaterController(
+        startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil
+    )
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         // Dev hook: pin the appearance for screenshot verification runs.
@@ -29,7 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case "light": NSApp.appearance = NSAppearance(named: .aqua)
         default: break
         }
-        NSApp.mainMenu = MainMenu.build()
+        NSApp.mainMenu = MainMenu.build(updaterController: updaterController)
         openVault(at: resolveVaultURL())
         NSApp.activate()
         DebugSnapshot.armIfRequested()

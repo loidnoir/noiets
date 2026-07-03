@@ -1,11 +1,12 @@
 import AppKit
+import Sparkle
 
 /// Programmatic main menu — the app's keyboard-shortcut registry. Items whose
 /// actions aren't implemented yet (palette, quick open, …) stay auto-disabled
 /// until their milestone lands, but the shortcuts are reserved here from day 1.
 @MainActor
 enum MainMenu {
-    static func build() -> NSMenu {
+    static func build(updaterController: SPUStandardUpdaterController? = nil) -> NSMenu {
         let main = NSMenu()
 
         // App
@@ -13,6 +14,15 @@ enum MainMenu {
         appMenu.addItem(withTitle: "About Noiets",
                         action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
                         keyEquivalent: "")
+        if let updaterController {
+            let check = NSMenuItem(
+                title: "Check for Updates…",
+                action: #selector(SPUStandardUpdaterController.checkForUpdates(_:)),
+                keyEquivalent: ""
+            )
+            check.target = updaterController
+            appMenu.addItem(check)
+        }
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Hide Noiets", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         appMenu.addItem({ let i = NSMenuItem(title: "Hide Others",

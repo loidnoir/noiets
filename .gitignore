@@ -1,5 +1,8 @@
 .DS_Store
 /Noiets.xcodeproj
+/App/Info.plist
+*sparkle-private*
+*.p12
 /build/
 .build/
 DerivedData/

@@ -28,6 +28,40 @@ Pure AppKit + TextKit 2, no web views, no Electron.
 | ⌘⌫ | Move note to trash (vault-local `.trash`, Obsidian-compatible) |
 | Esc | Vim normal mode |
 
+## Install
+
+Download the latest `Noiets-x.y.z.dmg` from
+[Releases](https://github.com/loidnoir/noites/releases/latest), open it, and drag
+**Noiets** into **Applications**.
+
+Unless the release is Developer ID signed and notarized, macOS Gatekeeper will block the
+first launch: open **System Settings → Privacy & Security**, scroll to the message about
+Noiets, and click **Open Anyway** (needed once).
+
+Updates are automatic (Sparkle): the app checks the release feed in the background and
+offers new versions in place — or use **Noiets → Check for Updates…** any time.
+
+## Releasing (maintainers)
+
+Releases are built by [`release.yml`](.github/workflows/release.yml) when a version tag
+is pushed:
+
+```sh
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+The workflow runs the package tests, builds Release, packages a DMG, generates a signed
+Sparkle `appcast.xml`, and publishes both as a GitHub release. The app's update feed is
+`releases/latest/download/appcast.xml`, so shipping a release *is* shipping the update.
+
+Required repo secret: `SPARKLE_PRIVATE_KEY` — the Sparkle EdDSA private key
+(base64 line, generated once; the matching public key is in `project.yml` as
+`SUPublicEDKey`). Losing it means existing installs can't verify future updates.
+
+Optional secrets for a signed + notarized app (no Gatekeeper friction):
+`MACOS_CERT_P12_BASE64`, `MACOS_CERT_PASSWORD`, `APPLE_ID`, `APPLE_TEAM_ID`,
+`APPLE_APP_PASSWORD`.
+
 ## Building
 
 Requires Xcode 26+ and [xcodegen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`).

@@ -8,6 +8,9 @@ options:
 packages:
   NoietsKit:
     path: Packages/NoietsKit
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: "2.6.0"
 
 targets:
   Noiets:
@@ -25,6 +28,15 @@ targets:
           - IndexKit
           - VaultStore
           - SharedModel
+      - package: Sparkle
+    info:
+      path: App/Info.plist
+      properties:
+        # Sparkle auto-update: the feed always points at the newest GitHub
+        # release's appcast.xml (the /latest/download URL is stable).
+        SUFeedURL: https://github.com/loidnoir/noites/releases/latest/download/appcast.xml
+        SUPublicEDKey: s4IvLrN8q7QPy2yRDcx+D3B0bz1u1mXOiONI6Cl6xZo=
+        SUEnableAutomaticChecks: true
     settings:
       base:
         PRODUCT_NAME: Noiets

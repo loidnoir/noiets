@@ -1,0 +1,120 @@
+name: Release
+
+# Pushing a tag like v0.2.0 builds the app, packages a DMG, generates a
+# Sparkle appcast signed with SPARKLE_PRIVATE_KEY, and publishes a GitHub
+# release. The app's Sparkle feed points at the latest release's appcast, so
+# existing installs pick the update up automatically.
+#
+# Required repository secret:
+#   SPARKLE_PRIVATE_KEY   contents of noiets-sparkle-private.key
+#
+# Optional secrets — when all are present the app is Developer ID signed and
+# notarized (no Gatekeeper friction for downloaders):
+#   MACOS_CERT_P12_BASE64   base64 of a Developer ID Application .p12
+#   MACOS_CERT_PASSWORD     password for the .p12
+#   APPLE_ID                Apple ID email used for notarization
+#   APPLE_TEAM_ID           10-char team identifier
+#   APPLE_APP_PASSWORD      app-specific password for notarytool
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  SPARKLE_VERSION: "2.6.4"
+
+jobs:
+  release:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      - name: Run package tests
+        run: swift test --package-path Packages/NoietsKit
+
+      - name: Build (Release)
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          xcodegen generate
+          xcodebuild -project Noiets.xcodeproj -scheme Noiets -configuration Release \
+            -derivedDataPath build -destination 'platform=macOS' \
+            MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="$VERSION" \
+            CODE_SIGN_IDENTITY=- build
+          mkdir -p dist/staging
+          cp -R "build/Build/Products/Release/Noiets.app" dist/staging/
+
+      - name: Sign and notarize (when certificates are configured)
+        env:
+          MACOS_CERT_P12_BASE64: ${{ secrets.MACOS_CERT_P12_BASE64 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          if [ -z "$MACOS_CERT_P12_BASE64" ]; then
+            echo "No signing certificate configured — shipping ad-hoc signed build."
+            codesign --force --deep -s - dist/staging/Noiets.app
+            echo "NOTARIZE=false" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          echo "$MACOS_CERT_P12_BASE64" | base64 -d > cert.p12
+          security create-keychain -p ci-temp build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p ci-temp build.keychain
+          security import cert.p12 -k build.keychain -P "$MACOS_CERT_PASSWORD" \
+            -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k ci-temp build.keychain
+          rm cert.p12
+          IDENTITY=$(security find-identity -v -p codesigning build.keychain \
+            | awk -F'"' '/Developer ID Application/ {print $2; exit}')
+          codesign --force --deep --options runtime --timestamp \
+            --sign "$IDENTITY" dist/staging/Noiets.app
+          echo "NOTARIZE=true" >> "$GITHUB_ENV"
+
+      - name: Package DMG
+        run: |
+          ln -s /Applications dist/staging/Applications
+          hdiutil create -volname "Noiets" -srcfolder dist/staging -ov -format UDZO \
+            "dist/Noiets-$VERSION.dmg"
+          rm -rf dist/staging
+
+      - name: Notarize DMG
+        if: env.NOTARIZE == 'true'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          xcrun notarytool submit "dist/Noiets-$VERSION.dmg" \
+            --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_PASSWORD" --wait
+          xcrun stapler staple "dist/Noiets-$VERSION.dmg"
+
+      - name: Generate Sparkle appcast
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          if [ -z "$SPARKLE_PRIVATE_KEY" ]; then
+            echo "::error::SPARKLE_PRIVATE_KEY secret is not set"; exit 1
+          fi
+          curl -sL -o sparkle.tar.xz \
+            "https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/Sparkle-${SPARKLE_VERSION}.tar.xz"
+          mkdir sparkle && tar -xf sparkle.tar.xz -C sparkle
+          printf '%s' "$SPARKLE_PRIVATE_KEY" | tr -d '\n' > ed25519.key
+          ./sparkle/bin/generate_appcast --ed-key-file ed25519.key \
+            --download-url-prefix "https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/" \
+            -o appcast.xml dist
+          rm ed25519.key
+          cat appcast.xml
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            "dist/Noiets-$VERSION.dmg" appcast.xml \
+            --title "Noiets $VERSION" --generate-notes
