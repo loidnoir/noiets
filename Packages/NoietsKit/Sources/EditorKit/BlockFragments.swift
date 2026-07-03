@@ -214,9 +214,18 @@ final class QuoteBarFragment: NSTextLayoutFragment {
                                                             weight: .bold)]).width / 2
         let padding = textLayoutManager?.textContainer?.lineFragmentPadding ?? 5
         // Wrapped quotes span several visual lines — run the bar from the
-        // first line's caps to the last line's descenders.
-        let firstLine = textLineFragments.first
-        let lastLine = textLineFragments.last
+        // first line's caps to the last line's descenders. Skip the empty
+        // trailing line fragment the paragraph's newline can produce.
+        let lines = textLineFragments.filter { lf in
+            let s = lf.attributedString.string as NSString
+            guard lf.characterRange.location + lf.characterRange.length <= s.length else {
+                return false
+            }
+            return !s.substring(with: lf.characterRange)
+                .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        let firstLine = lines.first ?? textLineFragments.first
+        let lastLine = lines.last ?? textLineFragments.last
         let firstBaseline = (firstLine?.typographicBounds.origin.y ?? 0)
             + (firstLine?.glyphOrigin.y ?? font.ascender)
         let lastBaseline = (lastLine?.typographicBounds.origin.y ?? 0)
