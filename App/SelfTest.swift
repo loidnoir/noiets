@@ -300,6 +300,20 @@ enum SelfTest {
         let row2 = tv.selectedRange().location
         result["colonUsesVisualRows"] = row2 > 0 && row2 < (wrapProse as NSString).length
 
+        // Regression: caret parked exactly at a soft-wrap boundary (start of
+        // a wrapped row) must still move DOWN with j — the affinity bug made
+        // moveDown land on the row the caret already displayed.
+        let wrapList = "- **Adapter** " + String(repeating: "bridges data and views ", count: 12)
+        editorView.load(text: wrapList + "\nnext line")
+        let vRows = tv.visualRows()
+        if vRows.count >= 3 {
+            tv.setSelectedRange(NSRange(location: vRows[1].location, length: 0))
+            key("j")
+            result["jFromWrapBoundary"] = tv.selectedRange().location >= vRows[2].location
+        } else {
+            result["jFromWrapBoundary"] = "skipped (no wrap)"
+        }
+
         // ⌃d half-page scroll through the real key path.
         editorView.load(text: (1...80).map { "line \($0)" }.joined(separator: "\n"))
         guard let ctrlD = NSEvent.keyEvent(

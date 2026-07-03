@@ -143,7 +143,13 @@ extension NoietsTextView: VimTextTarget {
 
     public var selection: NSRange {
         get { selectedRange() }
-        set { setSelectedRange(newValue) }
+        set {
+            // Downstream affinity = the caret belongs to the character AFTER
+            // the index (vim block semantics). Without it, an index landing
+            // exactly on a soft-wrap boundary reads as "end of the row above"
+            // and the next j moves to the row the caret already shows.
+            setSelectedRange(newValue, affinity: .downstream, stillSelecting: false)
+        }
     }
 
     /// Vim edits flow through the standard change pipeline so undo, the
@@ -215,8 +221,25 @@ extension NoietsTextView: VimTextTarget {
                 contentEnd -= 1
             }
             let index = characterIndexForInsertion(at: NSPoint(x: goal, y: lineRect.midY))
-            let clamped = min(max(index, lineRange.location), contentEnd)
-            setSelectedRange(NSRange(location: clamped, length: 0))
+            var clamped = min(max(index, lineRange.location), contentEnd)
+
+            // Wrap-boundary guard: a far-x hit on a wrapped row can return the
+            // boundary index, whose character belongs to the NEXT visual row.
+            // If the char under the caret isn't on the destination row, step
+            // back onto it.
+            if clamped < ns.length, let window {
+                let charScreen = firstRect(
+                    forCharacterRange: NSRange(location: clamped, length: 1), actualRange: nil
+                )
+                if charScreen != .zero {
+                    let charRect = convert(window.convertFromScreen(charScreen), from: nil)
+                    if abs(charRect.midY - lineRect.midY) > lineRect.height / 2 {
+                        clamped = max(lineRange.location, clamped - 1)
+                    }
+                }
+            }
+            setSelectedRange(NSRange(location: clamped, length: 0),
+                             affinity: .downstream, stillSelecting: false)
         }
     }
 
