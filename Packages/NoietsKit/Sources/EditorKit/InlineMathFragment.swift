@@ -34,7 +34,7 @@ final class OverlayLineFragment: NSTextLayoutFragment {
         case chip(width: CGFloat) // rounded background behind an inline-code span
     }
 
-    nonisolated static let chipPadding: CGFloat = 3
+    nonisolated static let chipPadding: CGFloat = 4.5
 
     struct Span {
         let relativeLocation: Int // span start, relative to the element start
@@ -76,7 +76,7 @@ final class OverlayLineFragment: NSTextLayoutFragment {
                   let line = lineFragment(containing: span.relativeLocation) else { continue }
             let anchor = line.locationForCharacter(at: span.relativeLocation)
             let bounds = line.typographicBounds
-            let height = bounds.height - 5
+            let height = bounds.height - 3
             let rect = CGRect(
                 x: point.x + bounds.origin.x + anchor.x,
                 y: point.y + bounds.origin.y + (bounds.height - height) / 2,
@@ -110,11 +110,12 @@ final class OverlayLineFragment: NSTextLayoutFragment {
                            respectFlipped: true,
                            hints: [.interpolation: NSImageInterpolation.high.rawValue])
             case .bullet:
-                // Centered where the "-" glyph sat.
+                // Same disc as a done checkbox, accent-colored, centered
+                // where the "-" glyph sat.
                 let dashWidth = ("-" as NSString)
                     .size(withAttributes: [.font: NSFont.systemFont(ofSize: theme.baseFontSize,
                                                                     weight: .bold)]).width
-                let radius: CGFloat = theme.baseFontSize * 0.16
+                let radius: CGFloat = theme.baseFontSize * 0.31
                 let center = CGPoint(
                     x: point.x + bounds.origin.x + anchor.x + dashWidth / 2,
                     y: point.y + bounds.origin.y + bounds.height / 2

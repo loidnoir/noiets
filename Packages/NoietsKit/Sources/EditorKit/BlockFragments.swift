@@ -8,11 +8,20 @@ extension NSTextLayoutFragment {
 }
 
 /// Column-wide background band behind code lines; glyphs draw as usual.
+/// The block's first/last lines round their outer corners (the band color is
+/// opaque, so extending a rounded band into the neighbor line hides the
+/// unrounded edge seamlessly).
 final class CodeBandFragment: NSTextLayoutFragment {
     private let theme: EditorTheme
+    private let roundTop: Bool
+    private let roundBottom: Bool
+    private let radius: CGFloat = 4 // matches the inline-code chips
 
-    init(textElement: NSTextElement, range: NSTextRange?, theme: EditorTheme) {
+    init(textElement: NSTextElement, range: NSTextRange?, theme: EditorTheme,
+         roundTop: Bool = false, roundBottom: Bool = false) {
         self.theme = theme
+        self.roundTop = roundTop
+        self.roundBottom = roundBottom
         super.init(textElement: textElement, range: range)
     }
 
@@ -31,7 +40,19 @@ final class CodeBandFragment: NSTextLayoutFragment {
     override func draw(at point: CGPoint, in context: CGContext) {
         context.saveGState()
         context.setFillColor(theme.codeBackground.cgColor)
-        context.fill(bandRect.offsetBy(dx: point.x, dy: point.y))
+        var rect = bandRect.offsetBy(dx: point.x, dy: point.y)
+        if !roundTop, !roundBottom {
+            context.fill(rect)
+        } else {
+            if !roundBottom { rect.size.height += radius } // corners hide under the next band
+            if !roundTop {
+                rect.origin.y -= radius
+                rect.size.height += radius
+            }
+            context.addPath(CGPath(roundedRect: rect, cornerWidth: radius,
+                                   cornerHeight: radius, transform: nil))
+            context.fillPath()
+        }
         context.restoreGState()
         super.draw(at: point, in: context)
     }
@@ -176,13 +197,19 @@ final class QuoteBarFragment: NSTextLayoutFragment {
     override func draw(at point: CGPoint, in context: CGContext) {
         context.saveGState()
         // The fragment origin follows the paragraph indent, so anchor the bar
-        // to the column start; center it on the glyphs' visual extent
-        // (mirrors theme.baseFont, which is MainActor-bound).
+        // to the bullet-dot column; center it on the text's full visual
+        // extent (caps to descenders). Mirrors theme.baseFont (MainActor).
         let font = NSFont.systemFont(ofSize: theme.baseFontSize)
+        let dashHalf = ("-" as NSString)
+            .size(withAttributes: [.font: NSFont.systemFont(ofSize: theme.baseFontSize,
+                                                            weight: .bold)]).width / 2
+        let padding = textLayoutManager?.textContainer?.lineFragmentPadding ?? 5
+        let capTop = font.ascender - font.capHeight
+        let glyphBottom = font.ascender - font.descender // descender is negative
+        let center = point.y + (capTop + glyphBottom) / 2
         let height = layoutFragmentFrame.height - theme.lineSpacing - 2
-        let top = point.y + (font.ascender - font.capHeight / 2) - height / 2
-        let bar = CGRect(x: point.x - layoutFragmentFrame.minX,
-                         y: max(point.y, top), width: 3, height: height)
+        let bar = CGRect(x: point.x - layoutFragmentFrame.minX + padding + dashHalf - 1.5,
+                         y: center - height / 2, width: 3, height: height)
         context.addPath(CGPath(roundedRect: bar, cornerWidth: 1.5, cornerHeight: 1.5,
                                transform: nil))
         context.setFillColor(theme.mutedColor.withAlphaComponent(0.5).cgColor)

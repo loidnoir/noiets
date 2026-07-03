@@ -25,7 +25,7 @@ public final class LivePreviewLayoutController: NSObject {
 
     private enum LineRole {
         case plain
-        case code
+        case code(roundTop: Bool, roundBottom: Bool)
         case image(path: String)
         case math(latex: String)
         case overlays(spans: [OverlayLineFragment.Span])
@@ -52,7 +52,16 @@ public final class LivePreviewLayoutController: NSObject {
 
         switch line.kind {
         case .code, .fenceDelimiter:
-            return .code // band always (even while editing)
+            // Band always (even while editing); the block's outer lines
+            // round their corners.
+            func isCode(_ i: Int) -> Bool {
+                switch scan.lines[i].kind {
+                case .code, .fenceDelimiter: return true
+                default: return false
+                }
+            }
+            return .code(roundTop: lineIndex == 0 || !isCode(lineIndex - 1),
+                         roundBottom: lineIndex == scan.lines.count - 1 || !isCode(lineIndex + 1))
         case .blockquote:
             return .quote
         case .horizontalRule where !active:
@@ -240,8 +249,9 @@ extension LivePreviewLayoutController: @preconcurrency NSTextLayoutManagerDelega
         switch role(forLineAt: charIndex, text: text) {
         case .plain:
             return standard
-        case .code:
-            return CodeBandFragment(textElement: textElement, range: elementRange, theme: theme)
+        case .code(let roundTop, let roundBottom):
+            return CodeBandFragment(textElement: textElement, range: elementRange, theme: theme,
+                                    roundTop: roundTop, roundBottom: roundBottom)
         case .image(let path):
             if let image = imageProvider.image(forPath: path) {
                 return ImageLineFragment(textElement: textElement, range: elementRange,
