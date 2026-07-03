@@ -19,6 +19,18 @@ enum UITheme {
         light: NSColor(red: 0.13, green: 0.42, blue: 0.95, alpha: 0.22),
         dark: NSColor(red: 0.35, green: 0.58, blue: 1.0, alpha: 0.28)
     )
+    static let modeNormalText = dynamic(
+        light: NSColor(red: 0.13, green: 0.42, blue: 0.95, alpha: 1),
+        dark: NSColor(red: 0.35, green: 0.58, blue: 1.0, alpha: 1)
+    )
+    static let modeInsertText = dynamic(
+        light: rgb(0xCF503A),
+        dark: rgb(0xCF503A)
+    )
+    static let modeVisualText = dynamic(
+        light: rgb(0x8D53D4),
+        dark: rgb(0x8D53D4)
+    )
     /// Hairline separating panes and the bottom mode bar — a touch darker
     /// than the sidebar background in both appearances.
     static let paneSeparator = dynamic(
@@ -37,6 +49,15 @@ enum UITheme {
         light: NSColor(white: 0.86, alpha: 1),
         dark: NSColor(white: 0.26, alpha: 1)
     )
+
+    private static func rgb(_ value: Int) -> NSColor {
+        NSColor(
+            red: CGFloat((value >> 16) & 0xff) / 255,
+            green: CGFloat((value >> 8) & 0xff) / 255,
+            blue: CGFloat(value & 0xff) / 255,
+            alpha: 1
+        )
+    }
 
     private static func dynamic(light: NSColor, dark: NSColor) -> NSColor {
         NSColor(name: nil) { appearance in

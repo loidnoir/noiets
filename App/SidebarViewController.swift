@@ -99,7 +99,7 @@ final class SidebarViewController: NSViewController {
         outlineView.indentationPerLevel = 22
         outlineView.autoresizesOutlineColumn = false
         outlineView.allowsEmptySelection = true
-        outlineView.allowsMultipleSelection = true // tree visual mode (v)
+        outlineView.allowsMultipleSelection = true  // tree visual mode (v)
         outlineView.dataSource = self
         outlineView.delegate = self
         outlineView.menu = buildContextMenu()
@@ -130,8 +130,8 @@ final class SidebarViewController: NSViewController {
         // separated from the content by a hairline (no pill).
         modeBar.translatesAutoresizingMaskIntoConstraints = false
         modeBarLine.translatesAutoresizingMaskIntoConstraints = false
-        modeLabel.font = .monospacedSystemFont(ofSize: 10.5, weight: .bold)
-        modeLabel.textColor = UITheme.sidebarSecondaryText
+        modeLabel.font = .monospacedSystemFont(ofSize: 12.5, weight: .bold)
+        modeLabel.textColor = UITheme.modeNormalText
         modeLabel.alignment = .center
         modeLabel.lineBreakMode = .byTruncatingTail
         modeLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -151,7 +151,7 @@ final class SidebarViewController: NSViewController {
             modeBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             modeBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             modeBar.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            modeBar.heightAnchor.constraint(equalToConstant: 32),
+            modeBar.heightAnchor.constraint(equalToConstant: 45),
 
             modeBarLine.topAnchor.constraint(equalTo: modeBar.topAnchor),
             modeBarLine.leadingAnchor.constraint(equalTo: modeBar.leadingAnchor),
@@ -304,18 +304,20 @@ final class SidebarViewController: NSViewController {
 
     // MARK: Keyboard tree navigation (nvim-tree essentials)
 
-    private var pendingTreeKey: Character? // for dd / gg chords
-    private var treeCount = 0 // count multiplier (5j, 3k, NG…)
+    private var pendingTreeKey: Character?  // for dd / gg chords
+    private var treeCount = 0  // count multiplier (5j, 3k, NG…)
 
     // Tree visual mode: v anchors, j/k extend, dd/r/m act on the selection.
     private var treeVisualAnchor: Int?
     private var treeVisualCursor = 0
 
-    private var isTreeVisual: Bool { treeVisualAnchor != nil }
+    private var isTreeVisual: Bool {
+        treeVisualAnchor != nil
+    }
 
     /// Focuses the tree, ensuring something is selected for j/k to move from.
     func focusTree() {
-        _ = view // ensure loaded
+        _ = view  // ensure loaded
         view.window?.makeFirstResponder(outlineView)
         if outlineView.selectedRow < 0 {
             moveSelection(from: -1, direction: 1)
@@ -330,22 +332,22 @@ final class SidebarViewController: NSViewController {
                 onFocusEditor?()
                 return true
             case "h":
-                return true // already here
+                return true  // already here
             default:
                 return false
             }
         }
-        if event.keyCode == 53 { // esc
+        if event.keyCode == 53 {  // esc
             pendingTreeKey = nil
             clearTreeCount()
             if isTreeVisual {
-                exitTreeVisual() // first esc leaves visual, second leaves the tree
+                exitTreeVisual()  // first esc leaves visual, second leaves the tree
             } else {
                 onFocusEditor?()
             }
             return true
         }
-        if event.keyCode == 36 || event.keyCode == 76 { // return
+        if event.keyCode == 36 || event.keyCode == 76 {  // return
             pendingTreeKey = nil
             clearTreeCount()
             if isTreeVisual { exitTreeVisual() }
@@ -380,7 +382,7 @@ final class SidebarViewController: NSViewController {
                 }
                 return true
             default:
-                break // fall through to treat ch fresh
+                break  // fall through to treat ch fresh
             }
         }
 
@@ -411,7 +413,9 @@ final class SidebarViewController: NSViewController {
             expandOrOpenSelected()
         case "h":
             if isTreeVisual { exitTreeVisual() }
-            for _ in 0..<count { collapseOrParentSelected() }
+            for _ in 0..<count {
+                collapseOrParentSelected()
+            }
         case "G":
             if isTreeVisual {
                 extendTreeVisual(direction: 1, steps: outlineView.numberOfRows)
@@ -460,7 +464,8 @@ final class SidebarViewController: NSViewController {
             var found = false
             while next >= 0, next < outlineView.numberOfRows {
                 if let item = outlineView.item(atRow: next) as? Item,
-                   case .separator = item.kind {
+                    case .separator = item.kind
+                {
                     next += direction
                     continue
                 }
@@ -522,7 +527,7 @@ final class SidebarViewController: NSViewController {
                 return
             }
         }
-        moveSelection(from: outlineView.numberOfRows, direction: -1) // past end → last
+        moveSelection(from: outlineView.numberOfRows, direction: -1)  // past end → last
     }
 
     /// Moves the selection cursor without activating rows (Enter activates).
@@ -539,7 +544,7 @@ final class SidebarViewController: NSViewController {
             while next >= 0, next < count {
                 if let item = outlineView.item(atRow: next) as? Item {
                     switch item.kind {
-                    case .separator: break // skip
+                    case .separator: break  // skip
                     case .fixed, .node:
                         landed = next
                         found = true
@@ -548,7 +553,7 @@ final class SidebarViewController: NSViewController {
                 if found { break }
                 next += direction
             }
-            if !found { break } // ran off the end: keep the furthest hit
+            if !found { break }  // ran off the end: keep the furthest hit
             remaining -= 1
         }
         if let landed {
@@ -572,7 +577,7 @@ final class SidebarViewController: NSViewController {
         case .node(let node) where node.isFolder:
             toggle(item)
         case .node(let node):
-            onSelectNote?(node.url) // opens + focuses the editor
+            onSelectNote?(node.url)  // opens + focuses the editor
         case .separator:
             break
         }
@@ -623,7 +628,8 @@ final class SidebarViewController: NSViewController {
         if nodes.count == 1 {
             let node = nodes[0]
             alert.messageText = "Move “\(node.title)” to Trash?"
-            alert.informativeText = node.isFolder
+            alert.informativeText =
+                node.isFolder
                 ? "The folder and everything inside it moves to the vault’s .trash."
                 : "The note moves to the vault’s .trash and can be restored from there."
         } else {
@@ -710,10 +716,12 @@ final class SidebarViewController: NSViewController {
                     || folder.url.path.hasPrefix(source.path + "/")
             }
         }
-        let title = nodes.count == 1 ? "Move “\(nodes[0].title)” to…" : "Move \(nodes.count) items to…"
+        let title =
+            nodes.count == 1 ? "Move “\(nodes[0].title)” to…" : "Move \(nodes.count) items to…"
         PalettePanel.shared.present(over: window, placeholder: title) { [weak self] query in
             let q = query.lowercased()
-            return folders
+            return
+                folders
                 .filter { q.isEmpty || $0.title.lowercased().contains(q) }
                 .map { folder in
                     PalettePanel.Item(symbol: "folder", title: folder.title, subtitle: nil) {
@@ -914,6 +922,26 @@ extension SidebarViewController: NSOutlineViewDelegate {
     /// Vim mode/status display (driven by the window controller).
     func setVimStatus(_ text: String) {
         modeLabel.stringValue = text
+        modeLabel.textColor = vimStatusColor(for: text)
+    }
+
+    private func vimStatusColor(for text: String) -> NSColor {
+        if text == "INSERT" || text.hasPrefix("INSERT ") {
+            return UITheme.modeInsertText
+        }
+        if text == "VISUAL" || text.hasPrefix("VISUAL ")
+            || text == "V-LINE" || text.hasPrefix("V-LINE ")
+            || text == "TREE VISUAL"
+        {
+            return UITheme.modeVisualText
+        }
+        if text == "NORMAL" || text.hasPrefix("NORMAL ")
+            || text == "TREE" || text.hasPrefix("TREE ")
+            || text == "LIST" || text.hasPrefix("LIST ")
+        {
+            return UITheme.modeNormalText
+        }
+        return UITheme.sidebarSecondaryText
     }
 
     func outlineViewSelectionDidChange(_: Notification) {

@@ -10,8 +10,19 @@ final class SoftRowView: NSTableRowView {
 
     override func drawSelection(in _: NSRect) {
         guard isSelected else { return }
-        let rect = bounds.insetBy(dx: 10, dy: 2)
-        let path = NSBezierPath(roundedRect: rect, xRadius: 7, yRadius: 7)
+        // Adjacent selected rows merge into one slab: only the outermost
+        // edges of a contiguous run keep their gap and rounded corners.
+        let joinAbove = isPreviousRowSelected
+        let joinBelow = isNextRowSelected
+        let topGap: CGFloat = (isFlipped ? joinAbove : joinBelow) ? 0 : 2
+        let bottomGap: CGFloat = (isFlipped ? joinBelow : joinAbove) ? 0 : 2
+        let rect = NSRect(
+            x: bounds.minX + 10,
+            y: bounds.minY + topGap,
+            width: bounds.width - 20,
+            height: bounds.height - topGap - bottomGap
+        )
+
         // Accent tint while the enclosing list has keyboard focus — this is
         // the pane-focus indicator.
         var container: NSView? = superview
@@ -20,6 +31,20 @@ final class SoftRowView: NSTableRowView {
         }
         let focused = container != nil && window?.firstResponder === container
         (focused ? UITheme.sidebarSelectionFocused : UITheme.sidebarSelection).setFill()
+
+        // One compound path, one fill — the tint is translucent, so separate
+        // overlapping fills would compound into visible seams.
+        let radius: CGFloat = 7
+        let path = NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius)
+        if joinAbove { // square off the joined edge
+            let edge = isFlipped ? rect.minY : rect.maxY - radius
+            path.appendRect(NSRect(x: rect.minX, y: edge, width: rect.width, height: radius))
+        }
+        if joinBelow {
+            let edge = isFlipped ? rect.maxY - radius : rect.minY
+            path.appendRect(NSRect(x: rect.minX, y: edge, width: rect.width, height: radius))
+        }
+        path.windingRule = .nonZero
         path.fill()
     }
 }
