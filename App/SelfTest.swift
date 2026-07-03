@@ -270,6 +270,21 @@ enum SelfTest {
         result["bigXBelowRaw"] = below
         result["bigXRestoresBelow"] = below > wideLen + 2 && below <= wideLen + 2 + wideLen
 
+        // * / # word search + :N go-to-line with the transient gutter.
+        editorView.load(text: "token beta\nother line\ntoken end\nfour\nfive")
+        tv.setSelectedRange(NSRange(location: 2, length: 0)) // inside "token"
+        key("*")
+        result["starJumpsToNextToken"] = tv.selectedRange().location == 22
+        key("#")
+        result["hashJumpsBack"] = tv.selectedRange().location == 0
+
+        key(":")
+        result["gutterShownOnColon"] = editorView.isLineNumberGutterActive
+        keys("4")
+        key("\r", keyCode: 36)
+        result["gutterHiddenAfterReturn"] = !editorView.isLineNumberGutterActive
+        result["colonWentToLine4"] = tv.selectedRange().location == 32 // "four"
+
         // ⌃d half-page scroll through the real key path.
         editorView.load(text: (1...80).map { "line \($0)" }.joined(separator: "\n"))
         guard let ctrlD = NSEvent.keyEvent(

@@ -119,7 +119,7 @@ final class SidebarFolderCellView: NSTableCellView {
         icon.contentTintColor = UITheme.sidebarSecondaryText
         icon.setContentHuggingPriority(.required, for: .horizontal)
 
-        label.font = .systemFont(ofSize: 15, weight: .semibold)
+        label.font = .systemFont(ofSize: 15, weight: .medium)
         label.textColor = UITheme.sidebarPrimaryText
         label.lineBreakMode = .byTruncatingTail
         label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)

@@ -53,7 +53,7 @@ final class MainWindowController: NSWindowController {
         splitVC.splitView = seamless
 
         let sidebar = NSSplitViewItem(viewController: sidebarVC)
-        sidebar.minimumThickness = 280
+        sidebar.minimumThickness = 300
         sidebar.maximumThickness = 500
         sidebar.canCollapse = true
         sidebar.holdingPriority = NSLayoutConstraint.Priority(261)

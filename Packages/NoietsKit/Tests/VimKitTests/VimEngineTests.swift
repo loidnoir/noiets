@@ -574,22 +574,67 @@ private func type(_ engine: VimEngine, _ target: MockTarget, _ text: String) {
     @Test func slashSearchJumps() {
         let (e, t) = makeEngine("alpha beta gamma beta", caret: 0)
         send(e, "/beta\n")
-        #expect(t.caret == 6)
+        #expect(t.selection == NSRange(location: 6, length: 4))
         send(e, "n")
-        #expect(t.caret == 17)
+        #expect(t.selection == NSRange(location: 17, length: 4))
         send(e, "n") // wraps
-        #expect(t.caret == 6)
+        #expect(t.selection == NSRange(location: 6, length: 4))
         send(e, "N")
-        #expect(t.caret == 17)
+        #expect(t.selection == NSRange(location: 17, length: 4))
     }
 
     @Test func smartcase() {
         let (e, t) = makeEngine("Foo foo", caret: 0)
         send(e, "/foo\n") // lowercase → case-insensitive → finds "foo" at 4? No: from caret+1, "Foo" at 0 excluded, oo... matches at 4
-        #expect(t.caret == 4)
+        #expect(t.selection == NSRange(location: 4, length: 3))
         send(e, "gg")
         send(e, "/Foo\n") // has uppercase → case-sensitive
-        #expect(t.caret == 0)
+        #expect(t.selection == NSRange(location: 0, length: 3))
+    }
+
+    @Test func hashSearchesWordUnderCaretBackward() {
+        let (e, t) = makeEngine("alpha beta alpha gamma alpha", caret: 25) // last alpha
+        send(e, "#")
+        #expect(t.selection.location == 11) // middle occurrence
+        send(e, "n") // continues backward
+        #expect(t.selection.location == 0)
+        send(e, "N") // opposite: forward
+        #expect(t.selection.location == 11)
+    }
+
+    @Test func starSearchesForwardWholeWord() {
+        let (e, t) = makeEngine("foo foobar foo", caret: 0)
+        send(e, "*")
+        #expect(t.selection.location == 11) // skips foobar (word-bounded)
+        send(e, "n") // wraps
+        #expect(t.selection.location == 0)
+    }
+
+    @Test func starFromPunctuationUsesNextWord() {
+        let (e, t) = makeEngine("-- token and token again", caret: 0)
+        send(e, "*") // caret on '-': vim takes the next word on the line
+        #expect(t.selection.location == 13)
+    }
+
+    @Test func colonGoesToLine() {
+        let (e, t) = makeEngine("one\ntwo\nthree\nfour", caret: 0)
+        send(e, ":3\n")
+        #expect(t.caret == 8) // first char of "three"
+        #expect(e.mode == .normal)
+    }
+
+    @Test func colonSignalsCommandModeAndCancels() {
+        let (e, t) = makeEngine("one\ntwo\nthree", caret: 0)
+        var states: [Bool] = []
+        e.onCommandMode = { states.append($0) }
+        send(e, ":12")
+        #expect(states == [true])
+        send(e, "\u{1B}")
+        #expect(states == [true, false])
+        #expect(t.caret == 0) // cancel moves nothing
+        send(e, ":2\n")
+        #expect(states == [true, false, true, false])
+        #expect(t.caret == 4)
     }
 
     @Test func escapeCancelsSearch() {

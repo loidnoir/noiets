@@ -26,6 +26,24 @@ public final class MarkdownEditorView: NSView {
     /// blinking bar).
     private let blockCaret = CaretBlockView()
 
+    /// Transient : mode gutter.
+    private var lineNumberGutter: LineNumberGutter?
+
+    /// Test/diagnostic hook.
+    public var isLineNumberGutterActive: Bool { lineNumberGutter != nil }
+
+    private func setLineNumbersVisible(_ visible: Bool) {
+        if visible {
+            guard lineNumberGutter == nil else { return }
+            let gutter = LineNumberGutter(textView: textView, theme: theme)
+            textView.addSubview(gutter)
+            lineNumberGutter = gutter
+        } else {
+            lineNumberGutter?.removeFromSuperview()
+            lineNumberGutter = nil
+        }
+    }
+
     /// Fired on every text change (typing, paste, vim edit). Used for autosave.
     public var onTextChange: (() -> Void)?
 
@@ -108,6 +126,9 @@ public final class MarkdownEditorView: NSView {
 
         textView.onFocusChange = { [weak self] in
             self?.refreshCaretShape()
+        }
+        vim.onCommandMode = { [weak self] active in
+            self?.setLineNumbersVisible(active)
         }
         textView.postsFrameChangedNotifications = true
         NotificationCenter.default.addObserver(
@@ -301,6 +322,7 @@ extension MarkdownEditorView: NSTextViewDelegate {
         onTextChange?()
         refreshWikiAutocomplete()
         refreshCaretShape()
+        lineNumberGutter?.recomputeLines()
     }
 
     // MARK: Link routing

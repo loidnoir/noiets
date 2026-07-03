@@ -291,8 +291,9 @@ final class SidebarViewController: NSViewController {
 
     @objc private func rowClicked() {
         guard outlineView.clickedRow >= 0,
-              let item = outlineView.item(atRow: outlineView.clickedRow) as? Item,
-              let node = item.fileNode, node.isFolder, !item.children.isEmpty else { return }
+            let item = outlineView.item(atRow: outlineView.clickedRow) as? Item,
+            let node = item.fileNode, node.isFolder, !item.children.isEmpty
+        else { return }
         toggle(item)
     }
 
@@ -309,13 +310,14 @@ final class SidebarViewController: NSViewController {
     /// Diagnostics for the self-test: exercises toggling + drag wiring.
     var sidebarDebugInfo: [String: Any] {
         var info: [String: Any] = [:]
-        info["actionWired"] = outlineView.action == #selector(rowClicked)
+        info["actionWired"] =
+            outlineView.action == #selector(rowClicked)
             && outlineView.target === self
         let folderItem = rootItems.first {
             $0.fileNode?.isFolder == true && !$0.children.isEmpty
         }
         if let folderItem {
-            info["rowForItem"] = outlineView.row(forItem: folderItem) // -1 = identity unknown
+            info["rowForItem"] = outlineView.row(forItem: folderItem)  // -1 = identity unknown
             info["before"] = outlineView.isItemExpanded(folderItem)
             outlineView.collapseItem(folderItem)
             info["plainCollapse"] = !outlineView.isItemExpanded(folderItem)
@@ -335,12 +337,22 @@ final class SidebarViewController: NSViewController {
             outlineView.expandItem(folderItem)
         }
         let ds = outlineView.dataSource
-        info["dragSourceExposed"] = ds?.responds(
-            to: #selector(NSOutlineViewDataSource.outlineView(_:pasteboardWriterForItem:))) ?? false
-        info["dropValidateExposed"] = ds?.responds(
-            to: #selector(NSOutlineViewDataSource.outlineView(_:validateDrop:proposedItem:proposedChildIndex:))) ?? false
-        info["dropAcceptExposed"] = ds?.responds(
-            to: #selector(NSOutlineViewDataSource.outlineView(_:acceptDrop:item:childIndex:))) ?? false
+        info["dragSourceExposed"] =
+            ds?.responds(
+                to: #selector(NSOutlineViewDataSource.outlineView(_:pasteboardWriterForItem:))
+            ) ?? false
+        info["dropValidateExposed"] =
+            ds?.responds(
+                to: #selector(
+                    NSOutlineViewDataSource.outlineView(
+                        _:validateDrop:proposedItem:proposedChildIndex:
+                    )
+                )
+            ) ?? false
+        info["dropAcceptExposed"] =
+            ds?.responds(
+                to: #selector(NSOutlineViewDataSource.outlineView(_:acceptDrop:item:childIndex:))
+            ) ?? false
         info["registeredForFileURL"] = outlineView.registeredDraggedTypes.contains(.fileURL)
         return info
     }
@@ -429,9 +441,10 @@ extension SidebarViewController: NSOutlineViewDelegate {
     func outlineView(_: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat {
         if let item = item as? Item {
             switch item.kind {
-            case .separator: return 18 // pure air
-            case .node(let node) where node.isFolder: return 34
-            case .fixed, .node: return 28
+            case .separator: return 18  // pure air
+            case .fixed: return 25
+            case .node(let node) where node.isFolder: return 25
+            case .node: return 23
             }
         }
         return 28
@@ -458,16 +471,18 @@ extension SidebarViewController: NSOutlineViewDelegate {
 
     func outlineViewItemDidExpand(_ notification: Notification) {
         guard !suppressExpansionBookkeeping,
-              let item = notification.userInfo?["NSObject"] as? Item else { return }
+            let item = notification.userInfo?["NSObject"] as? Item
+        else { return }
         if let url = item.fileNode?.url {
             expandedURLs.insert(url)
         }
-        outlineView.reloadItem(item) // refresh the chevron direction
+        outlineView.reloadItem(item)  // refresh the chevron direction
     }
 
     func outlineViewItemDidCollapse(_ notification: Notification) {
         guard !suppressExpansionBookkeeping,
-              let item = notification.userInfo?["NSObject"] as? Item else { return }
+            let item = notification.userInfo?["NSObject"] as? Item
+        else { return }
         if let url = item.fileNode?.url {
             expandedURLs.remove(url)
         }
@@ -493,9 +508,9 @@ extension SidebarViewController {
         let (targetItem, folder) = dropTarget(for: item)
         let target = folder.standardizedFileURL
         for source in sources.map(\.standardizedFileURL) {
-            if source.deletingLastPathComponent() == target { return [] } // no-op
+            if source.deletingLastPathComponent() == target { return [] }  // no-op
             if target == source || target.path.hasPrefix(source.path + "/") {
-                return [] // folder into itself / its own descendant
+                return []  // folder into itself / its own descendant
             }
         }
         // Always drop ON the resolved folder (order is alphabetical, not manual).
@@ -511,7 +526,7 @@ extension SidebarViewController {
     ) -> Bool {
         guard let sources = draggedURLs(info), !sources.isEmpty else { return false }
         let (_, folder) = dropTarget(for: item)
-        expandedURLs.insert(folder) // reveal where things landed
+        expandedURLs.insert(folder)  // reveal where things landed
         var lastMoved: URL?
         for source in sources {
             if let dest = session.moveItem(at: source, into: folder) {

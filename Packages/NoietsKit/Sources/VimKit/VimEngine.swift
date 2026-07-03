@@ -17,6 +17,8 @@ public final class VimEngine {
     public var onModeChange: ((VimMode) -> Void)?
     /// Status line text (search buffer, pending keys). Empty = clear.
     public var onStatus: ((String) -> Void)?
+    /// Fired when the : command line opens/closes (editor shows line numbers).
+    public var onCommandMode: ((Bool) -> Void)?
 
     // Pending command state
     private var count = 0
@@ -41,10 +43,16 @@ public final class VimEngine {
     // Find repeat (; ,)
     private var lastFind: (char: Character, forward: Bool, till: Bool)?
 
+    // : command line (go-to-line)
+    private var commandActive = false
+    private var commandBuffer = ""
+
     // Search
     private var searchActive = false
     private var searchBuffer = ""
     private var lastSearch: String?
+    private var lastSearchWordBounded = false // set by * and # (\b…\b matching)
+    private var searchDirectionForward = true // n repeats in this direction
 
     // Dot repeat: replay the keys of the last change; insert content is
     // captured text, not keys.
@@ -62,6 +70,11 @@ public final class VimEngine {
     public func reset() {
         resetPending()
         closeUndoGroupIfNeeded()
+        if commandActive {
+            commandActive = false
+            commandBuffer = ""
+            onCommandMode?(false)
+        }
         searchActive = false
         searchBuffer = ""
         insertCapture = ""
@@ -78,6 +91,7 @@ public final class VimEngine {
         if key.hasCommand { return false } // never eat menu shortcuts
 
         if searchActive { return handleSearchKey(key) }
+        if commandActive { return handleCommandKey(key) }
 
         switch mode {
         case .insert:
@@ -354,10 +368,19 @@ public final class VimEngine {
             searchActive = true
             searchBuffer = ""
             statusUpdate()
+        case ":":
+            commandActive = true
+            commandBuffer = ""
+            onCommandMode?(true)
+            statusUpdate()
+        case "*":
+            searchWordUnderCaret(forward: true)
+        case "#":
+            searchWordUnderCaret(forward: false)
         case "n":
-            searchNext(forward: true)
+            searchNext(forward: searchDirectionForward)
         case "N":
-            searchNext(forward: false)
+            searchNext(forward: !searchDirectionForward)
         case ".":
             repeatLastChange()
 
@@ -860,6 +883,43 @@ public final class VimEngine {
 
     // MARK: - Search
 
+    // MARK: - : command line
+
+    private func handleCommandKey(_ key: VimKey) -> Bool {
+        func close() {
+            commandActive = false
+            commandBuffer = ""
+            onCommandMode?(false)
+            statusUpdate()
+        }
+        if key.isEscape || (key.hasControl && key.characters == "[") {
+            close()
+            return true
+        }
+        if key.isReturn {
+            if let target, let line = Int(commandBuffer), line > 0 {
+                moveCaret(to: Motions.gotoLine(target.text, line: line, last: false))
+            }
+            close()
+            return true
+        }
+        if key.isBackspace {
+            if commandBuffer.isEmpty {
+                close()
+            } else {
+                commandBuffer.removeLast()
+                statusUpdate()
+            }
+            return true
+        }
+        // Go-to-line only: digits build the target.
+        if let ch = key.char, ch.isNumber {
+            commandBuffer.append(ch)
+            statusUpdate()
+        }
+        return true
+    }
+
     private func handleSearchKey(_ key: VimKey) -> Bool {
         if key.isEscape {
             searchActive = false
@@ -871,6 +931,8 @@ public final class VimEngine {
             searchActive = false
             if !searchBuffer.isEmpty {
                 lastSearch = searchBuffer
+                lastSearchWordBounded = false
+                searchDirectionForward = true
                 searchNext(forward: true, includeCurrent: false)
             }
             searchBuffer = ""
@@ -894,34 +956,68 @@ public final class VimEngine {
         return true
     }
 
+    /// Vim's * / #: search for the word under (or after) the caret, forward
+    /// or backward, whole-word matched. n/N continue in the same direction.
+    private func searchWordUnderCaret(forward: Bool) {
+        guard let target else { return }
+        let t = target.text
+        guard t.length > 0 else { return }
+
+        // Word under the caret, or the next word on the line (vim behavior).
+        var i = min(caret, t.length - 1)
+        let lineEnd = Motions.lineContentEnd(t, at: i)
+        while i < lineEnd, !Motions.isWordChar(t.character(at: i)) { i += 1 }
+        guard i < t.length, Motions.isWordChar(t.character(at: i)) else { return }
+        var start = i
+        var end = i
+        while start > 0, Motions.isWordChar(t.character(at: start - 1)) { start -= 1 }
+        while end < t.length - 1, Motions.isWordChar(t.character(at: end + 1)) { end += 1 }
+
+        lastSearch = t.substring(with: NSRange(location: start, length: end - start + 1))
+        lastSearchWordBounded = true
+        searchDirectionForward = forward
+        // Anchor at the word start so "previous" means an earlier occurrence.
+        if caret != start {
+            target.selection = NSRange(location: start, length: 0)
+        }
+        searchNext(forward: forward)
+    }
+
     private func searchNext(forward: Bool, includeCurrent: Bool = false) {
         guard let target, let query = lastSearch, !query.isEmpty else { return }
         let t = target.text
         guard t.length > 0 else { return }
-        // Smartcase: all-lowercase query searches case-insensitively.
-        var options: NSString.CompareOptions = []
-        if query == query.lowercased() { options.insert(.caseInsensitive) }
 
-        let start = caret
-        var found: NSRange = NSRange(location: NSNotFound, length: 0)
+        // Smartcase: all-lowercase query searches case-insensitively.
+        var options: NSRegularExpression.Options = []
+        if query == query.lowercased() { options.insert(.caseInsensitive) }
+        var pattern = NSRegularExpression.escapedPattern(for: query)
+        if lastSearchWordBounded { pattern = "\\b\(pattern)\\b" }
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: options) else { return }
+
+        let matches = regex.matches(in: t as String, range: NSRange(location: 0, length: t.length))
+            .map(\.range)
+        guard !matches.isEmpty else { return }
+
+        let selection = target.selection
+        let found: NSRange
         if forward {
-            let from = min(start + (includeCurrent ? 0 : 1), t.length)
-            found = t.range(of: query, options: options, range: NSRange(location: from, length: t.length - from))
-            if found.location == NSNotFound { // wrap
-                found = t.range(of: query, options: options, range: NSRange(location: 0, length: t.length))
+            let from: Int
+            if includeCurrent {
+                from = selection.location
+            } else if selection.length > 0 {
+                from = selection.location + selection.length
+            } else {
+                from = selection.location + 1
             }
+            found = matches.first { $0.location >= from } ?? matches[0] // wrap
         } else {
-            let upTo = max(start, 0)
-            found = t.range(of: query, options: options.union(.backwards),
-                            range: NSRange(location: 0, length: upTo))
-            if found.location == NSNotFound { // wrap
-                found = t.range(of: query, options: options.union(.backwards),
-                                range: NSRange(location: 0, length: t.length))
-            }
+            found = matches.last { $0.location < selection.location }
+                ?? matches[matches.count - 1] // wrap
         }
-        if found.location != NSNotFound {
-            moveCaret(to: found.location)
-        }
+        target.selection = found
+        target.scrollCaretToVisible()
+        count = 0
     }
 
     // MARK: - Dot repeat
@@ -991,6 +1087,8 @@ public final class VimEngine {
     private func statusUpdate() {
         if searchActive {
             onStatus?("/" + searchBuffer)
+        } else if commandActive {
+            onStatus?(":" + commandBuffer)
         } else if pendingOperator != nil || count > 0 {
             var s = ""
             if count > 0 { s += String(count) }
