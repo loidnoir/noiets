@@ -215,9 +215,40 @@ extension NoietsTextView: VimTextTarget {
     /// their end WITHOUT overwriting the memory, so a later longer line
     /// restores the original position. The goal resets whenever the caret
     /// moves by any other means (h/l/w, clicks, typing, motions).
+    /// Forces real (non-estimated) layout for the logical line at `location`
+    /// plus one line either side — cheap, local, and required before trusting
+    /// character rects for caret movement.
+    private func ensureLocalLayout(around location: Int) {
+        guard let layoutManager = textLayoutManager,
+              let contentStorage = textContentStorage else { return }
+        let ns = string as NSString
+        guard ns.length > 0 else { return }
+        let line = ns.lineRange(for: NSRange(location: min(location, ns.length - 1), length: 0))
+        var start = line.location
+        if start > 0 {
+            start = ns.lineRange(for: NSRange(location: start - 1, length: 0)).location
+        }
+        var end = line.location + line.length
+        if end < ns.length {
+            let next = ns.lineRange(for: NSRange(location: end, length: 0))
+            end = next.location + next.length
+        }
+        let doc = contentStorage.documentRange
+        guard let from = contentStorage.location(doc.location, offsetBy: start),
+              let to = contentStorage.location(doc.location, offsetBy: end),
+              let range = NSTextRange(location: from, end: to) else { return }
+        layoutManager.ensureLayout(for: range)
+    }
+
     public func moveCaretVisually(lines: Int) {
         inVerticalMove = true
         defer { inVerticalMove = false }
+
+        // Freshly opened documents may only have ESTIMATED layout around the
+        // caret; estimated character rects put every wrapped row at nearly
+        // the same y, so the landing hit-test yanks the caret back where it
+        // started. Force real layout for the neighborhood first.
+        ensureLocalLayout(around: selectedRange().location)
 
         let goal = verticalGoalX ?? caretViewRect()?.minX
         verticalGoalX = goal
@@ -229,15 +260,24 @@ extension NoietsTextView: VimTextTarget {
                 moveUp(nil)
             }
         }
+        ensureLocalLayout(around: selectedRange().location)
 
         // Land on the destination visual line at the remembered x. The result
         // is clamped to the logical line moveDown/moveUp actually reached:
         // on an empty (or short) line a far-out x has no glyphs, and the hit
         // test can otherwise escape to a neighboring line.
-        if let goal, let lineRect = caretViewRect() {
+        // The row is anchored to the landed CHARACTER's rect — a caret rect
+        // at a soft-wrap boundary is affinity-ambiguous and can report the
+        // row the move just left, snapping the caret straight back.
+        if let goal, let window {
             let ns = string as NSString
             guard ns.length > 0 else { return }
             let landed = min(selectedRange().location, ns.length - 1)
+            let landedScreen = firstRect(
+                forCharacterRange: NSRange(location: landed, length: 1), actualRange: nil
+            )
+            guard landedScreen != .zero else { return }
+            let lineRect = convert(window.convertFromScreen(landedScreen), from: nil)
             let lineRange = ns.lineRange(for: NSRange(location: landed, length: 0))
             var contentEnd = lineRange.location + lineRange.length
             if contentEnd > lineRange.location,
@@ -251,7 +291,7 @@ extension NoietsTextView: VimTextTarget {
             // boundary index, whose character belongs to the NEXT visual row.
             // If the char under the caret isn't on the destination row, step
             // back onto it.
-            if clamped < ns.length, let window {
+            if clamped < ns.length {
                 let charScreen = firstRect(
                     forCharacterRange: NSRange(location: clamped, length: 1), actualRange: nil
                 )
@@ -259,6 +299,23 @@ extension NoietsTextView: VimTextTarget {
                     let charRect = convert(window.convertFromScreen(charScreen), from: nil)
                     if abs(charRect.midY - lineRect.midY) > lineRect.height / 2 {
                         clamped = max(lineRange.location, clamped - 1)
+                    }
+                }
+            }
+
+            // The insertion hit-test can escape the landed row entirely (seen
+            // on indented code paragraphs, where it returns the paragraph
+            // start and yanks the caret back up). If the adjusted result
+            // still isn't on the landed row, trust the native move instead.
+            if clamped != landed {
+                let adjustedScreen = firstRect(
+                    forCharacterRange: NSRange(location: min(clamped, ns.length - 1), length: 1),
+                    actualRange: nil
+                )
+                if adjustedScreen != .zero {
+                    let adjustedRect = convert(window.convertFromScreen(adjustedScreen), from: nil)
+                    if abs(adjustedRect.midY - lineRect.midY) > lineRect.height / 2 {
+                        clamped = landed
                     }
                 }
             }

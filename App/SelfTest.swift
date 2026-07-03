@@ -319,6 +319,18 @@ enum SelfTest {
         result["bigXBelowRaw"] = below
         result["bigXRestoresBelow"] = below > wideLen + 2 && below <= wideLen + 2 + wideLen
 
+        // j on a soft-wrapped line INSIDE a code block, straight after load
+        // (regression: the caret refused to move down until an edit).
+        editorView.load(text: "before\n```bash\nsudo /opt/parallelcluster/scripts/"
+            + "directory_service/update_directory_service_password.sh "
+            + "--extra-flags-to-force-a-soft-wrap=true --more=yes\n```\nafter\n")
+        let sudoLoc = (tv.string as NSString).range(of: "sudo").location
+        tv.setSelectedRange(NSRange(location: sudoLoc, length: 0))
+        key("j")
+        let afterCodeJ = tv.selectedRange().location
+        result["codeWrapJTrace"] = [sudoLoc, afterCodeJ]
+        result["codeWrapJMoves"] = afterCodeJ > sudoLoc + 20
+
         // * / # word search + :N go-to-line with the transient gutter.
         editorView.load(text: "token beta\nother line\ntoken end\nfour\nfive")
         tv.setSelectedRange(NSRange(location: 2, length: 0)) // inside "token"

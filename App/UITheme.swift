@@ -20,8 +20,8 @@ enum UITheme {
         dark: NSColor(red: 0.35, green: 0.58, blue: 1.0, alpha: 0.28)
     )
     static let modeNormalText = dynamic(
-        light: NSColor(red: 0.13, green: 0.42, blue: 0.95, alpha: 1),
-        dark: NSColor(red: 0.35, green: 0.58, blue: 1.0, alpha: 1)
+        light: rgb(0x5672E3),
+        dark: rgb(0x5672E3)
     )
     static let modeInsertText = dynamic(
         light: rgb(0xCF503A),
