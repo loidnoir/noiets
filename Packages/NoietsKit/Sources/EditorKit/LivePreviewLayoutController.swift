@@ -84,10 +84,13 @@ public final class LivePreviewLayoutController: NSObject {
             let cells = Self.cells(of: text.substring(with: line.contentRange))
             let (columns, headerIndex) = tableGeometry(for: lineIndex, scan: scan, text: text)
             return .tableRow(cells: cells, isHeader: lineIndex == headerIndex, columns: columns)
-        case .listItem(let markerRange, let ordered, _, _) where !active:
+        case .listItem(let markerRange, let ordered, let task, _) where !active:
             let tokens = MarkdownScan.lineTokens(text, line: line)
             var spans = inlineMathSpans(tokens: tokens, text: text, base: line.range.location)
-            if !ordered {
+            if let task {
+                spans.insert(.init(relativeLocation: task.range.location - line.range.location,
+                                   kind: .checkbox(checked: task.checked)), at: 0)
+            } else if !ordered {
                 spans.insert(.init(relativeLocation: markerRange.location - line.range.location,
                                    kind: .bullet), at: 0)
             }

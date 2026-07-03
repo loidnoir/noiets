@@ -260,11 +260,27 @@ public final class IncrementalHighlighter: NSObject {
             case .tagName:
                 link(token.range, noiets("tag", text.substring(with: token.range)))
             case .listMarker(ordered: false):
-                // "- " collapses; a round dot draws in the reserved gap.
+                // "- " collapses; a round dot draws in the reserved gap. On
+                // task rows the check circle is the marker, so the dash just
+                // collapses with no reserved width.
                 hide(token.range)
+                let isTask = tokens.contains {
+                    if case .taskMarker = $0.kind { return true }
+                    return false
+                }
+                if isTask { break }
                 let bold = NSFont.systemFont(ofSize: theme.baseFontSize, weight: .bold)
                 let marker = text.substring(with: token.range) as NSString
                 let kern = max(0, marker.size(withAttributes: [.font: bold]).width
+                    - marker.size(withAttributes: [.font: Self.collapsedFont]).width)
+                storage.addAttribute(.kern, value: kern,
+                                     range: NSRange(location: token.range.location + token.range.length - 1,
+                                                    length: 1))
+            case .taskMarker:
+                // "[ ]" / "[x]" collapses; a check circle draws in the gap.
+                hide(token.range)
+                let marker = text.substring(with: token.range) as NSString
+                let kern = max(0, marker.size(withAttributes: [.font: theme.monoFont]).width
                     - marker.size(withAttributes: [.font: Self.collapsedFont]).width)
                 storage.addAttribute(.kern, value: kern,
                                      range: NSRange(location: token.range.location + token.range.length - 1,
@@ -352,9 +368,16 @@ public final class IncrementalHighlighter: NSObject {
             storage.addAttribute(.foregroundColor, value: theme.codeColor, range: range)
             addTraits(.italic, storage: storage, range: range)
 
-        case .listMarker:
+        case .listMarker(let ordered):
             storage.addAttribute(.foregroundColor, value: theme.accentColor, range: range)
-            addTraits(.bold, storage: storage, range: range)
+            if ordered {
+                storage.addAttribute(.font,
+                                     value: NSFont.systemFont(ofSize: theme.baseFontSize,
+                                                              weight: .medium),
+                                     range: range)
+            } else {
+                addTraits(.bold, storage: storage, range: range)
+            }
         case .taskMarker(let checked):
             storage.addAttribute(.font, value: theme.monoFont, range: range)
             storage.addAttribute(.foregroundColor,

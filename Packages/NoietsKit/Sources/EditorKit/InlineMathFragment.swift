@@ -30,6 +30,7 @@ final class OverlayLineFragment: NSTextLayoutFragment {
     enum OverlayKind {
         case image(NSImage)
         case bullet
+        case checkbox(checked: Bool)
     }
 
     struct Span {
@@ -93,6 +94,29 @@ final class OverlayLineFragment: NSTextLayoutFragment {
                 theme.accentColor.setFill()
                 NSBezierPath(ovalIn: CGRect(x: center.x - radius, y: center.y - radius,
                                             width: radius * 2, height: radius * 2)).fill()
+            case .checkbox(let checked):
+                // Centered in the hidden "[ ]" span: open = outline, done = fill.
+                // (theme.monoFont is computed and MainActor-bound; mirror it.)
+                let mono = NSFont.monospacedSystemFont(ofSize: theme.baseFontSize - 1.5,
+                                                       weight: .regular)
+                let spanWidth = ("[ ]" as NSString)
+                    .size(withAttributes: [.font: mono]).width
+                let radius: CGFloat = theme.baseFontSize * 0.31
+                let center = CGPoint(
+                    x: point.x + bounds.origin.x + anchor.x + spanWidth / 2,
+                    y: point.y + bounds.origin.y + bounds.height / 2
+                )
+                let rect = CGRect(x: center.x - radius, y: center.y - radius,
+                                  width: radius * 2, height: radius * 2)
+                if checked {
+                    theme.mutedColor.setFill()
+                    NSBezierPath(ovalIn: rect).fill()
+                } else {
+                    theme.accentColor.setStroke()
+                    let path = NSBezierPath(ovalIn: rect.insetBy(dx: 0.75, dy: 0.75))
+                    path.lineWidth = 1.5
+                    path.stroke()
+                }
             }
         }
         NSGraphicsContext.restoreGraphicsState()
