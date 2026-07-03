@@ -82,13 +82,14 @@ public final class IncrementalHighlighter: NSObject {
         }
     }
 
-    /// If the selection touches a table, expand to the whole run of table lines.
+    /// If the selection touches a table or a $$ math block, expand to the
+    /// whole run — those render as one unit and revert to source together.
     private func expandRangeToTable(_ range: NSRange, text: NSString) -> NSRange {
         guard let scan, !scan.lines.isEmpty, text.length > 0 else { return range }
         let span = scan.lineIndices(intersecting: range)
         func isTable(_ i: Int) -> Bool {
             switch scan.lines[i].kind {
-            case .tableRow, .tableDelimiterRow: return true
+            case .tableRow, .tableDelimiterRow, .mathDelimiter, .mathBlockContent: return true
             default: return false
             }
         }

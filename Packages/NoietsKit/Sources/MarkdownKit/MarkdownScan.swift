@@ -48,6 +48,14 @@ public enum MarkdownScan {
                 tokens.append(Token(.codeContent(language: language), line.contentRange))
             }
 
+        case .mathDelimiter:
+            tokens.append(Token(.mathMarker, line.contentRange))
+
+        case .mathBlockContent:
+            if line.contentRange.length > 0 {
+                tokens.append(Token(.mathContent(display: true), line.contentRange))
+            }
+
         case .frontmatterDelimiter:
             tokens.append(Token(.frontmatterDelimiter, line.contentRange))
 

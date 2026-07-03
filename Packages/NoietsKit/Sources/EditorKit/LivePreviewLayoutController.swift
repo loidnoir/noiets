@@ -56,6 +56,27 @@ public final class LivePreviewLayoutController: NSObject {
             return .quote
         case .horizontalRule where !active:
             return .rule
+        case .mathDelimiter where !active:
+            return .tableDelimiter // collapse the $$ fence lines
+        case .mathBlockContent where !active:
+            // The first content line renders the whole block; the rest collapse.
+            var first = lineIndex
+            while first > 0, case .mathBlockContent = scan.lines[first - 1].kind {
+                first -= 1
+            }
+            if lineIndex > first {
+                return .tableDelimiter
+            }
+            var last = lineIndex
+            while last < scan.lines.count - 1,
+                  case .mathBlockContent = scan.lines[last + 1].kind {
+                last += 1
+            }
+            let latex = (first...last)
+                .map { text.substring(with: scan.lines[$0].contentRange) }
+                .joined(separator: " ")
+                .trimmingCharacters(in: .whitespaces)
+            return latex.isEmpty ? .plain : .math(latex: latex)
         case .tableDelimiterRow where !active:
             return .tableDelimiter
         case .tableRow where !active:

@@ -100,8 +100,13 @@ public enum HTMLExport {
                 let tag = isHeader ? "th" : "td"
                 let row = cells.map { "<\(tag)>\(escapeInlineCell(String($0)))</\(tag)>" }.joined()
                 body.append("<tr>\(row)</tr>")
-            case .tableDelimiterRow:
+            case .tableDelimiterRow, .mathDelimiter:
                 continue
+            case .mathBlockContent:
+                close()
+                if line.contentRange.length > 0 {
+                    body.append("<p class=\"math\">\(escape(ns.substring(with: line.contentRange)))</p>")
+                }
             case .paragraph:
                 close()
                 body.append("<p>\(inlineHTML(ns, range: line.contentRange))</p>")

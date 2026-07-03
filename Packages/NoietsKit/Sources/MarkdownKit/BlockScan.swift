@@ -15,6 +15,8 @@ public struct BlockScan: Sendable {
         case heading(level: Int, markerRange: NSRange, textRange: NSRange)
         case fenceDelimiter(language: String?)
         case code(language: String?)
+        case mathDelimiter        // a `$$` line opening/closing a math block
+        case mathBlockContent     // lines between $$ fences
         case frontmatterDelimiter
         case frontmatterContent
         case listItem(markerRange: NSRange, ordered: Bool, task: TaskMarker?, contentStart: Int)
@@ -42,6 +44,8 @@ public struct BlockScan: Sendable {
             case .tableDelimiterRow: return 20
             case .tableRow: return 21
             case .paragraph: return 22
+            case .mathDelimiter: return 30
+            case .mathBlockContent: return 31
             }
         }
     }
@@ -59,6 +63,7 @@ public struct BlockScan: Sendable {
     private enum State {
         case normal
         case fence(char: unichar, length: Int, language: String?)
+        case math // inside a $$ … $$ block
     }
 
     public static func scan(_ text: NSString) -> BlockScan {
@@ -112,8 +117,23 @@ public struct BlockScan: Sendable {
             return .code(language: language)
         }
 
+        // Inside a $$ math block: only a closing $$ line escapes.
+        if case .math = state {
+            if isMathFenceLine(text, contentRange: contentRange) {
+                state = .normal
+                return .mathDelimiter
+            }
+            return .mathBlockContent
+        }
+
         let trimmed = trimmedRange(text, contentRange)
         if trimmed.length == 0 { return .blank }
+
+        // Opening $$ math fence (a line that is exactly `$$`).
+        if isMathFenceLine(text, contentRange: contentRange) {
+            state = .math
+            return .mathDelimiter
+        }
 
         // Opening fence.
         if let (char, len, language) = openingFence(text, contentRange: contentRange) {
@@ -180,6 +200,13 @@ public struct BlockScan: Sendable {
         if char == unichar(UInt8(ascii: "`")), info.contains("`") { return nil }
         let language = info.split(separator: " ").first.map { String($0).lowercased() }
         return (char, runLength, (language?.isEmpty ?? true) ? nil : language)
+    }
+
+    private static func isMathFenceLine(_ text: NSString, contentRange: NSRange) -> Bool {
+        let trimmed = trimmedRange(text, contentRange)
+        guard trimmed.length == 2 else { return false }
+        return text.character(at: trimmed.location) == unichar(UInt8(ascii: "$"))
+            && text.character(at: trimmed.location + 1) == unichar(UInt8(ascii: "$"))
     }
 
     private static func isClosingFence(_ text: NSString, contentRange: NSRange, char: unichar, minLength: Int) -> Bool {

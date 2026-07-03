@@ -29,7 +29,7 @@ public struct EditorTheme {
             baseFontSize: 15,
             maxColumnWidth: 760,
             lineSpacing: 3.5,
-            paragraphSpacing: 7,
+            paragraphSpacing: 0, // paragraph gap == wrapped-line gap, consistent rhythm
             textColor: dynamic(light: NSColor(white: 0.16, alpha: 1), dark: NSColor(white: 0.86, alpha: 1)),
             mutedColor: dynamic(light: NSColor(white: 0.68, alpha: 1), dark: NSColor(white: 0.45, alpha: 1)),
             accentColor: dynamic(light: NSColor(red: 0.13, green: 0.42, blue: 0.95, alpha: 1),

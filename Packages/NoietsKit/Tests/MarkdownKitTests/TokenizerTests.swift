@@ -62,6 +62,37 @@ private func first(_ doc: String, _ kind: TokenKind) -> String? {
         #expect(all.contains { $0.kind == .codeContent(language: nil) })
     }
 
+    @Test func multiLineMathBlock() {
+        let doc = "$$\nNPV = \\sum_{t=1}^{n} x\n$$\nafter"
+        let scan = BlockScan.scan(doc as NSString)
+        #expect(scan.lines[0].kind == .mathDelimiter)
+        #expect(scan.lines[1].kind == .mathBlockContent)
+        #expect(scan.lines[2].kind == .mathDelimiter)
+        #expect(scan.lines[3].kind == .paragraph)
+    }
+
+    @Test func mathBlockKeepsBlankAndMarkupLines() {
+        let doc = "$$\na + b\n\n**raw**\n$$"
+        let scan = BlockScan.scan(doc as NSString)
+        #expect(scan.lines[1].kind == .mathBlockContent)
+        #expect(scan.lines[2].kind == .mathBlockContent)
+        #expect(scan.lines[3].kind == .mathBlockContent)
+        #expect(scan.lines[4].kind == .mathDelimiter)
+        #expect(!tokens(doc).contains { $0.kind == .bold })
+    }
+
+    @Test func unclosedMathSwallowsRest() {
+        let doc = "$$\nx = 1\nstill math"
+        let scan = BlockScan.scan(doc as NSString)
+        #expect(scan.lines[1].kind == .mathBlockContent)
+        #expect(scan.lines[2].kind == .mathBlockContent)
+    }
+
+    @Test func inlineDollarStaysParagraph() {
+        let scan = BlockScan.scan("cost is $5 or $10" as NSString)
+        #expect(scan.lines[0].kind == .paragraph)
+    }
+
     @Test func frontmatterLines() {
         let doc = "---\ntitle: X\n---\nbody"
         let scan = BlockScan.scan(doc as NSString)
