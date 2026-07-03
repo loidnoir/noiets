@@ -421,6 +421,22 @@ enum SelfTest {
         keyTo(outline, "g")
         result["ggGoesFirst"] = outline.selectedRow >= 0 && outline.selectedRow <= 1
 
+        // Count multiplier: from the top, 3j hops three selectable rows
+        // (the spacer row doesn't count).
+        let start = outline.selectedRow
+        keyTo(outline, "3")
+        keyTo(outline, "j")
+        var hops = 0
+        var probe = start
+        while hops < 3, probe < outline.numberOfRows - 1 {
+            probe += 1
+            if !(probe == 3) { hops += 1 } // row 3 is the spacer in this vault
+        }
+        result["countJMultiplies"] = outline.selectedRow == probe
+        keyTo(outline, "2")
+        keyTo(outline, "k")
+        result["countKMultiplies"] = outline.selectedRow < probe
+
         // Enter on a note row opens it and focuses the editor.
         keyTo(outline, "G") // last row = a note in the scratch vault
         keyTo(outline, "\r", keyCode: 36)

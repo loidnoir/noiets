@@ -156,6 +156,7 @@ final class SearchViewController: NSViewController {
     // MARK: Keyboard (vim list navigation)
 
     private var pendingKey: Character?
+    private var listCount = 0
 
     /// Focus the results list, selecting the first row if nothing is.
     func focusList() {
@@ -192,21 +193,33 @@ final class SearchViewController: NSViewController {
             }
             return false
         }
-        if event.keyCode == 53 { // esc: cancel pending chord, stay in the list
+        if event.keyCode == 53 { // esc: cancel pending chord/count, stay in the list
             pendingKey = nil
+            listCount = 0
             return true
         }
         if event.keyCode == 36 || event.keyCode == 76 { // return
+            listCount = 0
             openRow(tableView.selectedRow)
             return true
         }
         guard let ch = event.charactersIgnoringModifiers?.first else { return false }
 
+        // Count multiplier (5j, 3k, NG).
+        if let digit = ch.wholeNumberValue, ch.isNumber, !(digit == 0 && listCount == 0) {
+            pendingKey = nil
+            listCount = listCount * 10 + digit
+            return true
+        }
+        let hadCount = listCount > 0
+        let count = max(listCount, 1)
+        listCount = 0
+
         if let pending = pendingKey {
             pendingKey = nil
             switch (pending, ch) {
             case ("g", "g"):
-                selectRow(0)
+                selectRow(hadCount ? count - 1 : 0)
                 return true
             case ("d", "d"):
                 confirmTrashSelected()
@@ -217,9 +230,9 @@ final class SearchViewController: NSViewController {
         }
 
         switch ch {
-        case "j": selectRow(tableView.selectedRow + 1)
-        case "k": selectRow(tableView.selectedRow - 1)
-        case "G": selectRow(rows.count - 1)
+        case "j": selectRow(tableView.selectedRow + count)
+        case "k": selectRow(tableView.selectedRow - count)
+        case "G": selectRow(hadCount ? count - 1 : rows.count - 1)
         case "g", "d": pendingKey = ch
         case "l": openRow(tableView.selectedRow)
         case "/":

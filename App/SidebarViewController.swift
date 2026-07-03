@@ -297,6 +297,7 @@ final class SidebarViewController: NSViewController {
     // MARK: Keyboard tree navigation (nvim-tree essentials)
 
     private var pendingTreeKey: Character? // for dd / gg chords
+    private var treeCount = 0 // count multiplier (5j, 3k, NG…)
 
     /// Focuses the tree, ensuring something is selected for j/k to move from.
     func focusTree() {
@@ -322,17 +323,30 @@ final class SidebarViewController: NSViewController {
         }
         if event.keyCode == 53 { // esc
             pendingTreeKey = nil
+            clearTreeCount()
             onFocusEditor?()
             return true
         }
         if event.keyCode == 36 || event.keyCode == 76 { // return
             pendingTreeKey = nil
+            clearTreeCount()
             activateSelectedRow()
             return true
         }
         guard let ch = event.charactersIgnoringModifiers?.first else { return false }
 
-        // Two-key chords: dd (delete), gg (top).
+        // Count multiplier: digits accumulate (5j, 12G…).
+        if let digit = ch.wholeNumberValue, ch.isNumber, !(digit == 0 && treeCount == 0) {
+            pendingTreeKey = nil
+            treeCount = treeCount * 10 + digit
+            setVimStatus("TREE \(treeCount)")
+            return true
+        }
+        let hadCount = treeCount > 0
+        let count = max(treeCount, 1)
+        clearTreeCount()
+
+        // Two-key chords: dd (delete), gg (top / Nth row).
         if let pending = pendingTreeKey {
             pendingTreeKey = nil
             switch (pending, ch) {
@@ -340,7 +354,11 @@ final class SidebarViewController: NSViewController {
                 confirmTrashSelected()
                 return true
             case ("g", "g"):
-                moveSelection(from: -1, direction: 1)
+                if hadCount {
+                    selectNthSelectableRow(count)
+                } else {
+                    moveSelection(from: -1, direction: 1)
+                }
                 return true
             default:
                 break // fall through to treat ch fresh
@@ -349,15 +367,19 @@ final class SidebarViewController: NSViewController {
 
         switch ch {
         case "j":
-            moveSelection(from: outlineView.selectedRow, direction: 1)
+            moveSelection(from: outlineView.selectedRow, direction: 1, steps: count)
         case "k":
-            moveSelection(from: outlineView.selectedRow, direction: -1)
+            moveSelection(from: outlineView.selectedRow, direction: -1, steps: count)
         case "l":
             expandOrOpenSelected()
         case "h":
-            collapseOrParentSelected()
+            for _ in 0..<count { collapseOrParentSelected() }
         case "G":
-            moveSelection(from: outlineView.numberOfRows, direction: -1)
+            if hadCount {
+                selectNthSelectableRow(count)
+            } else {
+                moveSelection(from: outlineView.numberOfRows, direction: -1)
+            }
         case "g", "d":
             pendingTreeKey = ch
         case "r":
@@ -376,24 +398,62 @@ final class SidebarViewController: NSViewController {
         return true
     }
 
+    private func clearTreeCount() {
+        if treeCount != 0 {
+            treeCount = 0
+            setVimStatus("TREE")
+        }
+    }
+
+    /// Selects the Nth selectable row (1-based), vim's NG / Ngg.
+    private func selectNthSelectableRow(_ n: Int) {
+        var remaining = n
+        for row in 0..<outlineView.numberOfRows {
+            guard let item = outlineView.item(atRow: row) as? Item else { continue }
+            if case .separator = item.kind { continue }
+            remaining -= 1
+            if remaining == 0 {
+                suppressSelectionCallback = true
+                outlineView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+                suppressSelectionCallback = false
+                outlineView.scrollRowToVisible(row)
+                return
+            }
+        }
+        moveSelection(from: outlineView.numberOfRows, direction: -1) // past end → last
+    }
+
     /// Moves the selection cursor without activating rows (Enter activates).
-    private func moveSelection(from row: Int, direction: Int) {
+    /// `steps` applies the vim count: 5j hops five selectable rows.
+    private func moveSelection(from row: Int, direction: Int, steps: Int = 1) {
         let count = outlineView.numberOfRows
         guard count > 0 else { return }
-        var next = row + direction
-        while next >= 0, next < count {
-            if let item = outlineView.item(atRow: next) as? Item {
-                switch item.kind {
-                case .separator: break // skip
-                case .fixed, .node:
-                    suppressSelectionCallback = true
-                    outlineView.selectRowIndexes(IndexSet(integer: next), byExtendingSelection: false)
-                    suppressSelectionCallback = false
-                    outlineView.scrollRowToVisible(next)
-                    return
-                }
-            }
+        var landed: Int?
+        var next = row
+        var remaining = max(steps, 1)
+        while remaining > 0 {
             next += direction
+            var found = false
+            while next >= 0, next < count {
+                if let item = outlineView.item(atRow: next) as? Item {
+                    switch item.kind {
+                    case .separator: break // skip
+                    case .fixed, .node:
+                        landed = next
+                        found = true
+                    }
+                }
+                if found { break }
+                next += direction
+            }
+            if !found { break } // ran off the end: keep the furthest hit
+            remaining -= 1
+        }
+        if let landed {
+            suppressSelectionCallback = true
+            outlineView.selectRowIndexes(IndexSet(integer: landed), byExtendingSelection: false)
+            suppressSelectionCallback = false
+            outlineView.scrollRowToVisible(landed)
         }
     }
 
