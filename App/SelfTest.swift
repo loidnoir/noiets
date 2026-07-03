@@ -505,6 +505,30 @@ enum SelfTest {
                 && window.firstResponder === outline
         }
 
+        // Trash view stays live: with Trash visible, trashing a file from
+        // elsewhere must appear without revisiting.
+        keyTo(tv, "h", control: true)
+        if let outline = focusedOutline(),
+           let split = window.contentViewController as? NSSplitViewController,
+           let sidebar = split.splitViewItems.first?.viewController as? SidebarViewController {
+            _ = sidebar // (tree already focused)
+            keyTo(outline, "g")
+            keyTo(outline, "g")
+            keyTo(outline, "2")
+            keyTo(outline, "j") // Trash fixed row
+            keyTo(outline, "\r", keyCode: 36) // open Trash view
+            if let list = window.firstResponder as? NSTableView, !(list is NSOutlineView) {
+                let rowsBefore = list.numberOfRows
+                if let wc2 = window.windowController as? MainWindowController {
+                    // Trash a real note from the session while Trash is visible.
+                    if let victim = wc2.session.firstNote() {
+                        wc2.session.trashNote(victim)
+                    }
+                }
+                result["trashViewLiveRefresh"] = list.numberOfRows == rowsBefore + 1
+            }
+        }
+
         // Recent view: Enter on the fixed row focuses its LIST; j/k navigate;
         // Enter opens a note (back to the editor); Esc returns to the tree.
         keyTo(tv, "h", control: true)

@@ -12,7 +12,12 @@ final class VaultSession {
 
     let vault: Vault
     private(set) var tree: FileNode
-    var onTreeChange: (() -> Void)?
+    /// Multicast: sidebar tree, trash view, … all react to vault changes.
+    private var treeObservers: [() -> Void] = []
+
+    func onTreeChange(_ observer: @escaping () -> Void) {
+        treeObservers.append(observer)
+    }
     /// Fired after any index batch lands (search/backlink UIs refresh).
     var onIndexChanged: (() -> Void)?
 
@@ -71,7 +76,9 @@ final class VaultSession {
 
     func rescan() {
         tree = VaultScanner.scan(vault)
-        onTreeChange?()
+        for observer in treeObservers {
+            observer()
+        }
     }
 
     func firstNote() -> URL? {

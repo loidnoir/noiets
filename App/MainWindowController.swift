@@ -88,6 +88,12 @@ final class MainWindowController: NSWindowController {
             self?.searchVC.indexChanged()
             self?.inspectorVC.indexChanged()
         }
+        // Trash contents change from anywhere (tree dd, editor, FSEvents) —
+        // keep the view live while it's the visible content.
+        session.onTreeChange { [weak self] in
+            guard let self, self.hostVC.current === self.trashVC else { return }
+            self.trashVC.reload()
+        }
 
         // Wiki-links, tags, inspector navigation.
         editorVC.editor.onOpenWikiLink = { [weak self] target in

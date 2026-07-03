@@ -76,6 +76,8 @@ final class TrashViewController: NSViewController {
 
     func reload() {
         _ = view
+        let previous = tableView.selectedRow >= 0 && tableView.selectedRow < items.count
+            ? items[tableView.selectedRow] : nil
         let fm = FileManager.default
         items = (try? fm.contentsOfDirectory(
             at: session.vault.trashURL,
@@ -88,6 +90,10 @@ final class TrashViewController: NSViewController {
         }) ?? []
         emptyLabel.isHidden = !items.isEmpty
         tableView.reloadData()
+        // Keep the cursor on the same item across live refreshes.
+        if let previous, let row = items.firstIndex(of: previous) {
+            tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+        }
     }
 
     private func buildMenu() -> NSMenu {

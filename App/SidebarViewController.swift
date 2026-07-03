@@ -160,7 +160,7 @@ final class SidebarViewController: NSViewController {
 
         rebuildItems()
         outlineView.reloadData()
-        session.onTreeChange = { [weak self] in self?.reload() }
+        session.onTreeChange { [weak self] in self?.reload() }
     }
 
     // MARK: Items
