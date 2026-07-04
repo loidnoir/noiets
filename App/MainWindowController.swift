@@ -182,6 +182,7 @@ final class MainWindowController: NSWindowController {
         case "search": showFixed(.search)
         case "views", "recent": showFixed(.views)
         case "trash": showFixed(.trash)
+        case "docs": openDocs()
         default: break
         }
         if let query = env["NOIETS_VIEW_QUERY"], !query.isEmpty {
@@ -269,6 +270,17 @@ final class MainWindowController: NSWindowController {
             trashVC.focusList()
         }
         window?.title = session.vault.name
+    }
+
+    /// The built-in docs: a read-only markdown page bundled with the app.
+    func openDocs() {
+        guard let url = Bundle.main.url(forResource: "Docs", withExtension: "md"),
+              let text = try? String(contentsOf: url, encoding: .utf8) else { return }
+        session.flushPendingSave()
+        hostVC.show(editorVC)
+        editorVC.display(text: text, readOnly: true)
+        window?.title = "Noiets Docs"
+        editorVC.focusEditor()
     }
 
     /// Opens a sidebar view (built-in Recent or a saved query).
@@ -447,12 +459,10 @@ final class MainWindowController: NSWindowController {
         let commands: [(String, String, @MainActor () -> Void)] = [
             ("New Note", "square.and.pencil", { [weak self] in self?.newNote(nil) }),
             ("New Folder", "folder.badge.plus", { [weak self] in self?.newFolder(nil) }),
-            ("Search Vault", "magnifyingglass", { [weak self] in self?.searchVault(nil) }),
-            ("Recent Notes", "clock", { [weak self] in self?.sidebarVC.selectFixed(.views) }),
             ("Open Trash", "trash", { [weak self] in self?.sidebarVC.selectFixed(.trash) }),
             ("Toggle Sidebar", "sidebar.left", { [weak self] in self?.toggleSidebarPane(nil) }),
             ("Reveal in Finder", "finder", { [weak self] in self?.revealInFinder(nil) }),
-            ("Move Note to Trash", "trash", { [weak self] in self?.moveNoteToTrash(nil) }),
+            ("Open Docs", "book", { [weak self] in self?.openDocs() }),
             ("Save Note", "internaldrive", { [weak self] in self?.saveNote(nil) }),
         ]
         return

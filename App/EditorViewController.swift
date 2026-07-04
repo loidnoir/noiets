@@ -43,12 +43,16 @@ final class EditorViewController: NSViewController {
         editor.isHidden = true
         editor.resourceRoot = session.vault.rootURL
         editor.onTextChange = { [weak self] in
-            guard let self else { return }
+            guard let self, !self.isReadOnly else { return }
             let editorView = self.editor
             self.session.noteEdited { editorView.string }
             self.onEdited?(editorView.string)
         }
     }
+
+    /// Read-only display (the built-in docs): rendered like a note, never
+    /// typed into, never saved anywhere.
+    private(set) var isReadOnly = false
 
     /// Selects + reveals a source range (outline/backlink navigation).
     func jump(to range: NSRange) {
@@ -61,10 +65,12 @@ final class EditorViewController: NSViewController {
         focusEditor()
     }
 
-    func display(text: String) {
+    func display(text: String, readOnly: Bool = false) {
+        isReadOnly = readOnly
         editor.isHidden = false
         emptyLabel.isHidden = true
         editor.load(text: text)
+        editor.textView.isEditable = !readOnly
     }
 
     func displayEmpty() {
