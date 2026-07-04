@@ -317,6 +317,11 @@ public final class VimEngine {
 
         // MARK: Immediate edits
         case "x":
+            // In visual mode x deletes the whole selection, like d.
+            if case .visual = mode {
+                operateOnVisual(.delete)
+                break
+            }
             beginChange()
             let end = Motions.right(t, from: caret, count: max(count, 1), allowEnd: true)
             let range = NSRange(location: caret, length: max(0, end - caret))

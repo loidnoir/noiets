@@ -542,6 +542,19 @@ private func type(_ engine: VimEngine, _ target: MockTarget, _ text: String) {
         #expect(t.buffer as String == "a\n\nb")
     }
 
+    @Test func visualXDeletesSelection() {
+        let (e, t) = makeEngine("hello world", caret: 0)
+        send(e, "ve") // select "hello"
+        send(e, "x")
+        #expect(t.buffer as String == " world")
+        #expect(e.mode == .normal)
+
+        // V-line x removes the whole line.
+        let (e2, t2) = makeEngine("one\ntwo\nthree", caret: 0)
+        send(e2, "Vx")
+        #expect(t2.buffer as String == "two\nthree")
+    }
+
     @Test func charwiseSelectAndDelete() {
         let (e, t) = makeEngine("hello world", caret: 0)
         send(e, "ve")
