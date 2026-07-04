@@ -31,3 +31,42 @@ import Testing
         #expect(Frontmatter.parse(in: "---") == nil)
     }
 }
+
+@Suite struct FrontmatterPropertiesTests {
+    @Test func scalarsListsAndQuotes() {
+        let props = Frontmatter.parseProperties("""
+        Status: Draft
+        genre: [Sci-fi, "Hard sci-fi"]
+        authors: Liu Cixin, 'Ted Chiang'
+        year: 2019
+        """)
+        #expect(props == [
+            .init(key: "status", values: ["Draft"]),
+            .init(key: "genre", values: ["Sci-fi", "Hard sci-fi"]),
+            .init(key: "authors", values: ["Liu Cixin", "Ted Chiang"]),
+            .init(key: "year", values: ["2019"]),
+        ])
+    }
+
+    @Test func skipsCommentsBlanksAndIndented() {
+        let props = Frontmatter.parseProperties("""
+        # a comment
+
+        list:
+          - block style unsupported
+        key: value
+        """)
+        #expect(props == [
+            .init(key: "list", values: [""]),
+            .init(key: "key", values: ["value"]),
+        ])
+    }
+
+    @Test func bareKeyHasEmptyValueAndDuplicatesLastWin() {
+        let props = Frontmatter.parseProperties("draft:\nstatus: a\nstatus: b")
+        #expect(props == [
+            .init(key: "draft", values: [""]),
+            .init(key: "status", values: ["b"]),
+        ])
+    }
+}

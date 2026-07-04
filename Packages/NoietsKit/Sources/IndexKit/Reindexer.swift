@@ -26,6 +26,10 @@ public actor Reindexer {
         let fm = FileManager.default
         for path in absolutePaths {
             let url = URL(fileURLWithPath: path)
+            // App-internal dot locations (.trash, .noiets) are never notes:
+            // don't index their markdown and don't let their churn (views.json
+            // saves, trash moves) force full reconciles.
+            if Vault.hasHiddenComponent(vault.relativePath(of: url)) { continue }
             if Vault.isMarkdownFile(url) {
                 pendingRelPaths.insert(vault.relativePath(of: url))
                 continue

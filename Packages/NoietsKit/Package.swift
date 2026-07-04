@@ -34,5 +34,6 @@ let package = Package(
         .testTarget(name: "MarkdownKitTests", dependencies: ["MarkdownKit"]),
         .testTarget(name: "VimKitTests", dependencies: ["VimKit"]),
         .testTarget(name: "IndexKitTests", dependencies: ["IndexKit"]),
+        .testTarget(name: "VaultStoreTests", dependencies: ["VaultStore"]),
     ]
 )

@@ -18,6 +18,14 @@ final class VaultSession {
     func onTreeChange(_ observer: @escaping () -> Void) {
         treeObservers.append(observer)
     }
+
+    /// Saved sidebar views (NoQL queries) — persisted in the vault.
+    private(set) var savedViews: [SavedView] = []
+    private var viewObservers: [() -> Void] = []
+
+    func onViewsChange(_ observer: @escaping () -> Void) {
+        viewObservers.append(observer)
+    }
     /// Fired after any index batch lands (search/backlink UIs refresh).
     var onIndexChanged: (() -> Void)?
 
@@ -34,6 +42,35 @@ final class VaultSession {
     init(vault: Vault) {
         self.vault = vault
         self.tree = VaultScanner.scan(vault)
+        self.savedViews = ViewsStore.load(vault: vault)
+    }
+
+    // MARK: Saved views
+
+    private func notifyViewObservers() {
+        for observer in viewObservers {
+            observer()
+        }
+    }
+
+    func upsertView(name: String, query: String) {
+        ViewsStore.upsert(name: name, query: query, vault: vault)
+        savedViews = ViewsStore.load(vault: vault)
+        notifyViewObservers()
+    }
+
+    @discardableResult
+    func renameView(_ old: String, to new: String) -> Bool {
+        guard ViewsStore.rename(old, to: new, vault: vault) else { return false }
+        savedViews = ViewsStore.load(vault: vault)
+        notifyViewObservers()
+        return true
+    }
+
+    func deleteView(named name: String) {
+        ViewsStore.delete(name: name, vault: vault)
+        savedViews = ViewsStore.load(vault: vault)
+        notifyViewObservers()
     }
 
     /// Boots the index + file watching. Called once the UI is up.
@@ -79,13 +116,20 @@ final class VaultSession {
         for observer in treeObservers {
             observer()
         }
+        // views.json may have been edited externally (git pull, Finder).
+        let fresh = ViewsStore.load(vault: vault)
+        if fresh != savedViews {
+            savedViews = fresh
+            notifyViewObservers()
+        }
     }
 
     func firstNote() -> URL? {
         func walk(_ node: FileNode) -> URL? {
             for child in node.children {
-                if !child.isFolder { return child.url }
-                if let found = walk(child) { return found }
+                // Images are tree leaves too — a "note" is markdown only.
+                if !child.isFolder, Vault.isMarkdownFile(child.url) { return child.url }
+                if child.isFolder, let found = walk(child) { return found }
             }
             return nil
         }

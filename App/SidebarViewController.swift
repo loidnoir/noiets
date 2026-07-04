@@ -4,12 +4,23 @@ import VaultStore
 /// The left pane: Search / Recent / Trash, a hairline divider, then the vault
 /// folder tree with files as leaves. Flat NSOutlineView — no source-list
 /// vibrancy, no bubbles.
+/// A sidebar view row: a named NoQL query. `Recent` is built in (not stored,
+/// not deletable); the rest come from the vault's `.noiets/views.json`.
+struct ViewRef: Equatable {
+    var name: String
+    var query: String
+    var isBuiltin: Bool
+
+    static let recent = ViewRef(name: "Recent", query: "sort:modified", isBuiltin: true)
+}
+
 @MainActor
 final class SidebarViewController: NSViewController {
     private let session: VaultSession
 
     var onSelectNote: ((URL) -> Void)?
     var onSelectFixed: ((Fixed) -> Void)?
+    var onSelectView: ((ViewRef) -> Void)?
     var onCurrentNoteRemoved: (() -> Void)?
     /// ⌃l / Esc from the tree → give focus back to the editor.
     var onFocusEditor: (() -> Void)?
@@ -25,12 +36,12 @@ final class SidebarViewController: NSViewController {
     // MARK: Model
 
     enum Fixed: Int, CaseIterable {
-        case search, recent, trash
+        case search, views, trash
 
         var title: String {
             switch self {
             case .search: return "Search"
-            case .recent: return "Recent"
+            case .views: return "Views"
             case .trash: return "Trash"
             }
         }
@@ -38,7 +49,7 @@ final class SidebarViewController: NSViewController {
         var symbol: String {
             switch self {
             case .search: return "magnifyingglass"
-            case .recent: return "clock"
+            case .views: return "line.3.horizontal.decrease"
             case .trash: return "trash"
             }
         }
@@ -47,6 +58,7 @@ final class SidebarViewController: NSViewController {
     final class Item {
         enum Kind {
             case fixed(Fixed)
+            case view(ViewRef)
             case separator
             case node(FileNode)
         }
@@ -60,6 +72,11 @@ final class SidebarViewController: NSViewController {
 
         var fileNode: FileNode? {
             if case .node(let n) = kind { return n }
+            return nil
+        }
+
+        var viewRef: ViewRef? {
+            if case .view(let ref) = kind { return ref }
             return nil
         }
     }
@@ -168,6 +185,7 @@ final class SidebarViewController: NSViewController {
         rebuildItems()
         outlineView.reloadData()
         session.onTreeChange { [weak self] in self?.reload() }
+        session.onViewsChange { [weak self] in self?.reload() }
     }
 
     // MARK: Items
@@ -175,6 +193,10 @@ final class SidebarViewController: NSViewController {
     private func rebuildItems() {
         itemsByURL.removeAll()
         var items: [Item] = Fixed.allCases.map { Item(.fixed($0)) }
+        items.append(Item(.view(.recent)))
+        items += session.savedViews.map {
+            Item(.view(ViewRef(name: $0.name, query: $0.query, isBuiltin: false)))
+        }
         items.append(Item(.separator))
         items += session.tree.children.map(makeItem)
         rootItems = items
@@ -545,7 +567,7 @@ final class SidebarViewController: NSViewController {
                 if let item = outlineView.item(atRow: next) as? Item {
                     switch item.kind {
                     case .separator: break  // skip
-                    case .fixed, .node:
+                    case .fixed, .view, .node:
                         landed = next
                         found = true
                     }
@@ -574,6 +596,8 @@ final class SidebarViewController: NSViewController {
         switch item.kind {
         case .fixed(let fixed):
             onSelectFixed?(fixed)
+        case .view(let ref):
+            onSelectView?(ref)
         case .node(let node) where node.isFolder:
             toggle(item)
         case .node(let node):
@@ -622,6 +646,10 @@ final class SidebarViewController: NSViewController {
     }
 
     private func confirmTrashSelected() {
+        if let ref = selectedItem?.viewRef {
+            deleteViewRow(ref)
+            return
+        }
         let nodes = selectedFileNodes
         guard !nodes.isEmpty, let window = view.window else { return }
         let alert = NSAlert()
@@ -658,7 +686,58 @@ final class SidebarViewController: NSViewController {
         }
     }
 
+    /// dd on a saved-view row: confirm + remove the query (notes untouched).
+    private func deleteViewRow(_ ref: ViewRef) {
+        guard !ref.isBuiltin, let window = view.window else {
+            NSSound.beep() // the built-in Recent view can't be deleted
+            return
+        }
+        let alert = NSAlert()
+        alert.messageText = "Delete view “\(ref.name)”?"
+        alert.informativeText =
+            "The saved query is removed from this vault. Notes are not affected."
+        alert.addButton(withTitle: "Delete View")
+        alert.addButton(withTitle: "Cancel")
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard let self else { return }
+            if response == .alertFirstButtonReturn {
+                self.session.deleteView(named: ref.name)
+            }
+            self.focusTree()
+        }
+    }
+
+    /// r on a saved-view row: rename the query.
+    private func renameViewRow(_ ref: ViewRef) {
+        guard !ref.isBuiltin, let window = view.window else {
+            NSSound.beep()
+            return
+        }
+        let alert = NSAlert()
+        alert.messageText = "Rename “\(ref.name)”"
+        alert.addButton(withTitle: "Rename")
+        alert.addButton(withTitle: "Cancel")
+        let field = NSTextField(string: ref.name)
+        field.frame = NSRect(x: 0, y: 0, width: 240, height: 24)
+        alert.accessoryView = field
+        alert.window.initialFirstResponder = field
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard let self else { return }
+            if response == .alertFirstButtonReturn {
+                let name = field.stringValue.trimmingCharacters(in: .whitespaces)
+                if name.isEmpty || (name != ref.name && !self.session.renameView(ref.name, to: name)) {
+                    NSSound.beep()
+                }
+            }
+            self.focusTree()
+        }
+    }
+
     private func renameSelected() {
+        if let ref = selectedItem?.viewRef {
+            renameViewRow(ref)
+            return
+        }
         let nodes = selectedFileNodes
         guard !nodes.isEmpty, let window = view.window else { return }
         let alert = NSAlert()
@@ -788,6 +867,9 @@ final class SidebarViewController: NSViewController {
         }
         if let folderItem {
             info["rowForItem"] = outlineView.row(forItem: folderItem)  // -1 = identity unknown
+            // Expand explicitly — the launch note no longer necessarily lives
+            // in the first folder (image-only folders sort first).
+            outlineView.expandItem(folderItem)
             info["before"] = outlineView.isItemExpanded(folderItem)
             outlineView.collapseItem(folderItem)
             info["plainCollapse"] = !outlineView.isItemExpanded(folderItem)
@@ -881,6 +963,11 @@ extension SidebarViewController: NSOutlineViewDelegate {
             return SidebarCellView.make(
                 in: outlineView, title: node.title, symbol: nil, isFolder: false
             )
+        case .view(let ref):
+            return SidebarCellView.make(
+                in: outlineView, title: ref.name, symbol: nil, isFolder: false,
+                prominent: false
+            )
         }
     }
 
@@ -892,7 +979,7 @@ extension SidebarViewController: NSOutlineViewDelegate {
         guard let item = item as? Item else { return false }
         switch item.kind {
         case .separator: return false
-        case .fixed, .node: return true
+        case .fixed, .view, .node: return true
         }
     }
 
@@ -914,6 +1001,7 @@ extension SidebarViewController: NSOutlineViewDelegate {
             switch item.kind {
             case .separator: return 18  // pure air
             case .fixed: return 25
+            case .view: return 23
             case .node(let node) where node.isFolder: return 25
             case .node: return 23
             }
@@ -953,6 +1041,8 @@ extension SidebarViewController: NSOutlineViewDelegate {
         switch item.kind {
         case .fixed(let fixed):
             onSelectFixed?(fixed)
+        case .view(let ref):
+            onSelectView?(ref)
         case .node(let node) where !node.isFolder:
             onSelectNote?(node.url)
         default:

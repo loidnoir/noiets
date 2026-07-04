@@ -16,6 +16,8 @@ public struct ExtractedNote: Sendable {
     public let links: [LinkEdge]
     public let wordCount: Int
     public let body: String
+    /// Frontmatter properties (keys lowercased; one entry per list element).
+    public let props: [String: [String]]
 }
 
 public enum NoteExtractor {
@@ -54,6 +56,14 @@ public enum NoteExtractor {
             }
         }
 
+        // Frontmatter properties (generic key/value for filtered views).
+        var props: [String: [String]] = [:]
+        if let fm = Frontmatter.parse(in: markdown) {
+            for property in Frontmatter.parseProperties(fm.content) {
+                props[property.key] = property.values
+            }
+        }
+
         // Frontmatter tags: handles `tags: [a, b]` and `tags: a, b`.
         if let fm = Frontmatter.parse(in: markdown) {
             for rawLine in fm.content.components(separatedBy: "\n") {
@@ -75,7 +85,8 @@ public enum NoteExtractor {
             tags: tags,
             links: links,
             wordCount: words,
-            body: markdown
+            body: markdown,
+            props: props
         )
     }
 }

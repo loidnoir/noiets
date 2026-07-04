@@ -25,6 +25,12 @@ public struct Vault: Hashable, Sendable {
         return ext == "md" || ext == "markdown"
     }
 
+    /// True when any path component is dot-prefixed (.trash, .noiets, …) —
+    /// app-internal locations the indexer must never treat as notes.
+    public static func hasHiddenComponent(_ relPath: String) -> Bool {
+        relPath.split(separator: "/").contains { $0.hasPrefix(".") }
+    }
+
     /// Image assets are shown in the tree (openable, embeddable) but never
     /// indexed — only markdown files are notes.
     public static let imageExtensions: Set<String> =

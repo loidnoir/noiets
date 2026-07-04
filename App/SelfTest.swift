@@ -1,5 +1,6 @@
 import AppKit
 import EditorKit
+import IndexKit
 import VaultStore
 
 /// Dev-only functional smoke test: NOIETS_SELFTEST=1 makes the app print a
@@ -126,6 +127,7 @@ enum SelfTest {
                let editorView = findEditorView(in: window) {
                 out["images"] = imageResolutionChecks(wc, editorView)
                 out["paneNav"] = paneNavChecks(wc, editorView, window: window)
+                out["views"] = viewsChecks(wc, editorView, window: window)
             }
             if let outline = outlines.first {
                 out["sidebarRows"] = outline.numberOfRows
@@ -558,7 +560,7 @@ enum SelfTest {
         var probe = start
         while hops < 3, probe < outline.numberOfRows - 1 {
             probe += 1
-            if !(probe == 3) { hops += 1 } // row 3 is the spacer in this vault
+            if !(probe == 4) { hops += 1 } // row 4 is the spacer (after the Recent view row)
         }
         result["countJMultiplies"] = outline.selectedRow == probe
         keyTo(outline, "2")
@@ -583,7 +585,7 @@ enum SelfTest {
             keyTo(outline, "g")
             keyTo(outline, "g")
             keyTo(outline, "4")
-            keyTo(outline, "j") // onto the first tree node
+            keyTo(outline, "j") // over Views/Trash/Recent + spacer onto the tree
             keyTo(outline, "v")
             keyTo(outline, "j")
             result["visualSelectsTwo"] = outline.selectedRowIndexes.count == 2
@@ -618,13 +620,13 @@ enum SelfTest {
             }
         }
 
-        // Recent view: Enter on the fixed row focuses its LIST; j/k navigate;
-        // Enter opens a note (back to the editor); Esc returns to the tree.
+        // Views (built-in Recent): Enter on the fixed row focuses its LIST;
+        // j/k navigate; Enter opens a note; Esc stays in the list.
         keyTo(tv, "h", control: true)
         if let outline = focusedOutline() {
             keyTo(outline, "g")
             keyTo(outline, "g") // first row = Search
-            keyTo(outline, "j") // Recent
+            keyTo(outline, "j") // Views
             keyTo(outline, "\r", keyCode: 36)
             let list = window.firstResponder as? NSTableView
             result["recentListFocused"] = list != nil && !(list is NSOutlineView)
@@ -645,6 +647,98 @@ enum SelfTest {
                 }
             }
         }
+
+        return result
+    }
+
+    /// Sidebar Views: row structure, opening the built-in Recent view through
+    /// real key events, live NoQL filtering, saved-view round-trip, and the
+    /// frontmatter-property query path.
+    private static func viewsChecks(
+        _ wc: MainWindowController,
+        _ editorView: MarkdownEditorView,
+        window: NSWindow
+    ) -> [String: Any] {
+        var result: [String: Any] = [:]
+        let tv = editorView.textView
+
+        func keyTo(_ view: NSView, _ ch: String, keyCode: UInt16 = 0, control: Bool = false) {
+            guard let event = NSEvent.keyEvent(
+                with: .keyDown, location: .zero,
+                modifierFlags: control ? [.control] : [],
+                timestamp: 0, windowNumber: window.windowNumber, context: nil,
+                characters: ch, charactersIgnoringModifiers: ch,
+                isARepeat: false, keyCode: keyCode
+            ) else { return }
+            view.keyDown(with: event)
+        }
+        func findViews<T: NSView>(_ type: T.Type) -> [T] {
+            var found: [T] = []
+            func walk(_ view: NSView) {
+                if let v = view as? T { found.append(v) }
+                view.subviews.forEach(walk)
+            }
+            if let content = window.contentView { walk(content) }
+            return found
+        }
+
+        // Row structure: Search / Views / Trash / Recent(view) / spacer / tree…
+        if let outline = findViews(NSOutlineView.self).first {
+            result["viewsRowPresent"] = outline.numberOfRows >= 5
+        }
+
+        // Open Views via keys: tree → gg → j → Enter = built-in Recent list.
+        window.makeFirstResponder(tv)
+        keyTo(tv, "\u{1B}", keyCode: 53)
+        keyTo(tv, "h", control: true)
+        if let outline = window.firstResponder as? NSOutlineView {
+            keyTo(outline, "g")
+            keyTo(outline, "g")
+            keyTo(outline, "j")
+            keyTo(outline, "\r", keyCode: 36)
+        }
+        let list = window.firstResponder as? NSTableView
+        result["builtinRecentOpens"] = list != nil && !(list is NSOutlineView)
+
+        // The query field carries the built-in query and filters live.
+        if let field = findViews(NSSearchField.self).first(where: { !$0.isHidden }) {
+            result["builtinQueryPrefilled"] = field.stringValue == "sort:modified"
+            field.stringValue = "sort:title limit:2"
+            _ = field.sendAction(field.action, to: field.target)
+            if let list {
+                result["liveQueryFilters"] = list.numberOfRows <= 2 && list.numberOfRows > 0
+            }
+            field.stringValue = "sort:modified"
+            _ = field.sendAction(field.action, to: field.target)
+        }
+
+        // Saved-view round-trip (store-level; alerts stay untested).
+        wc.session.upsertView(name: "ProbeView", query: "tag:probetag")
+        let viewsFile = wc.session.vault.rootURL
+            .appendingPathComponent(".noiets/views.json")
+        result["viewsFileWritten"] = FileManager.default.fileExists(atPath: viewsFile.path)
+        result["savedViewListed"] = wc.session.savedViews.contains {
+            $0.name == "ProbeView" && $0.query == "tag:probetag"
+        }
+        wc.session.deleteView(named: "ProbeView")
+        result["savedViewDeleted"] = !wc.session.savedViews.contains { $0.name == "ProbeView" }
+
+        // Frontmatter properties flow into the index and are queryable.
+        if let index = wc.session.index {
+            let extracted = NoteExtractor.extract(
+                markdown: "---\nstatus: probe-done\n---\n# P\nbody",
+                fallbackTitle: "P"
+            )
+            try? index.upsert(relPath: "SelfTestProp.md", extracted: extracted,
+                              mtime: 1, size: 1, created: 1)
+            let hits = (try? index.notes(matching: ViewQuery.parse("status:probe-done"))) ?? []
+            result["propQueryHits"] = hits.count == 1 ? "PASS" : "FAIL: \(hits.count)"
+            try? index.deleteNote(relPath: "SelfTestProp.md")
+        }
+
+        result["hiddenPathIgnored"] = Vault.hasHiddenComponent(".noiets/views.json")
+            && Vault.hasHiddenComponent(".trash/x.md")
+            && !Vault.hasHiddenComponent("Notes/x.md")
 
         return result
     }

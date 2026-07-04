@@ -9,8 +9,8 @@ import IndexKit
 final class SearchViewController: NSViewController {
     enum Mode: Equatable {
         case search
-        case recent
         case tag(String)
+        case view(ViewRef)
     }
 
     private let session: VaultSession
@@ -20,10 +20,18 @@ final class SearchViewController: NSViewController {
 
     private var mode: Mode = .search
     private let searchField = NSSearchField()
+    private let saveButton = NSButton(title: "Save", target: nil, action: nil)
     private let headerLabel = NSTextField(labelWithString: "")
     private let tableView = VimTableView()
     private let scrollView = NSScrollView()
     private var rows: [(title: String, detail: String, relPath: String)] = []
+
+    /// The query as last saved — the Save affordance appears when the live
+    /// field differs from it.
+    private var savedBaseline = ""
+    /// Plain-search text, cached across mode switches so a NoQL query never
+    /// leaks into FTS search and vice versa.
+    private var lastSearchText = ""
 
     init(session: VaultSession) {
         self.session = session
@@ -75,16 +83,34 @@ final class SearchViewController: NSViewController {
         scrollView.drawsBackground = false
         scrollView.translatesAutoresizingMaskIntoConstraints = false
 
+        // Quiet save affordance for view queries; ⌘⏎ triggers it from
+        // anywhere in the window while visible (⌘S is Toggle Sidebar).
+        saveButton.bezelStyle = .inline
+        saveButton.isBordered = false
+        saveButton.font = .systemFont(ofSize: 12, weight: .medium)
+        saveButton.contentTintColor = UITheme.modeNormalText
+        saveButton.target = self
+        saveButton.action = #selector(saveViewQuery)
+        saveButton.keyEquivalent = "\r"
+        saveButton.keyEquivalentModifierMask = [.command]
+        saveButton.isHidden = true
+        saveButton.setContentHuggingPriority(.required, for: .horizontal)
+
+        let fieldRow = NSStackView(views: [searchField, saveButton])
+        fieldRow.orientation = .horizontal
+        fieldRow.spacing = 8
+        fieldRow.translatesAutoresizingMaskIntoConstraints = false
+
         container.addSubview(headerLabel)
-        container.addSubview(searchField)
+        container.addSubview(fieldRow)
         container.addSubview(scrollView)
         NSLayoutConstraint.activate([
             headerLabel.topAnchor.constraint(equalTo: container.safeAreaLayoutGuide.topAnchor, constant: 18),
             headerLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 28),
-            searchField.topAnchor.constraint(equalTo: headerLabel.bottomAnchor, constant: 12),
-            searchField.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 26),
-            searchField.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -26),
-            scrollView.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: 10),
+            fieldRow.topAnchor.constraint(equalTo: headerLabel.bottomAnchor, constant: 12),
+            fieldRow.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 26),
+            fieldRow.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -26),
+            scrollView.topAnchor.constraint(equalTo: fieldRow.bottomAnchor, constant: 10),
             scrollView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             scrollView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
@@ -94,19 +120,28 @@ final class SearchViewController: NSViewController {
     // MARK: Modes
 
     func show(mode: Mode) {
-        self.mode = mode
         _ = view // force load
+        if case .search = self.mode, case .search = mode {} else if case .search = self.mode {
+            lastSearchText = searchField.stringValue // leaving plain search
+        }
+        self.mode = mode
         switch mode {
         case .search:
             headerLabel.stringValue = "Search"
             searchField.isHidden = false
-        case .recent:
-            headerLabel.stringValue = "Recent"
-            searchField.isHidden = true
+            searchField.placeholderString = "Search vault"
+            searchField.stringValue = lastSearchText
         case .tag(let name):
             headerLabel.stringValue = "#\(name)"
             searchField.isHidden = true
+        case .view(let ref):
+            headerLabel.stringValue = ref.name
+            searchField.isHidden = false
+            searchField.placeholderString = "tag:x folder:Notes words… sort:modified"
+            searchField.stringValue = ref.query
+            savedBaseline = ref.query
         }
+        updateSaveButton()
         reload()
     }
 
@@ -120,7 +155,56 @@ final class SearchViewController: NSViewController {
     }
 
     @objc private func queryChanged() {
+        updateSaveButton()
         reload()
+    }
+
+    // MARK: Saving views
+
+    private func updateSaveButton() {
+        guard case .view = mode else {
+            saveButton.isHidden = true
+            return
+        }
+        let text = searchField.stringValue.trimmingCharacters(in: .whitespaces)
+        saveButton.isHidden = text == savedBaseline.trimmingCharacters(in: .whitespaces)
+    }
+
+    @objc private func saveViewQuery() {
+        guard case .view(let ref) = mode, !saveButton.isHidden else { return }
+        let query = searchField.stringValue.trimmingCharacters(in: .whitespaces)
+
+        if !ref.isBuiltin {
+            session.upsertView(name: ref.name, query: query)
+            mode = .view(ViewRef(name: ref.name, query: query, isBuiltin: false))
+            savedBaseline = query
+            updateSaveButton()
+            return
+        }
+
+        // Saving from the built-in Recent view creates a new named view.
+        guard let window = view.window else { return }
+        let alert = NSAlert()
+        alert.messageText = "Save View"
+        alert.informativeText = "The query is saved to this vault and listed in the sidebar."
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        let field = NSTextField(string: "")
+        field.placeholderString = "View name"
+        field.frame = NSRect(x: 0, y: 0, width: 240, height: 24)
+        alert.accessoryView = field
+        alert.window.initialFirstResponder = field
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard let self else { return }
+            let name = field.stringValue.trimmingCharacters(in: .whitespaces)
+            guard response == .alertFirstButtonReturn, !name.isEmpty else {
+                self.focusList()
+                return
+            }
+            self.session.upsertView(name: name, query: query)
+            self.show(mode: .view(ViewRef(name: name, query: query, isBuiltin: false)))
+            self.focusList()
+        }
     }
 
     private func reload() {
@@ -134,12 +218,15 @@ final class SearchViewController: NSViewController {
                 let hits = (try? index.searchNotes(query)) ?? []
                 rows = hits.map { ($0.title, $0.snippet, $0.relPath) }
             }
-        case .recent:
-            let recents = (try? index.recentNotes()) ?? []
-            rows = recents.map { ($0.title, $0.relPath, $0.relPath) }
         case .tag(let name):
             let notes = (try? index.notes(withTag: name)) ?? []
             rows = notes.map { ($0.title, $0.relPath, $0.relPath) }
+        case .view:
+            // The live field is the source of truth, so an index-change
+            // reload never clobbers in-flight edits.
+            let query = ViewQuery.parse(searchField.stringValue)
+            let hits = (try? index.notes(matching: query)) ?? []
+            rows = hits.map { ($0.title, $0.snippet.isEmpty ? $0.relPath : $0.snippet, $0.relPath) }
         }
         tableView.reloadData()
     }
@@ -236,7 +323,10 @@ final class SearchViewController: NSViewController {
         case "g", "d": pendingKey = ch
         case "l": openRow(tableView.selectedRow)
         case "/":
-            if case .search = mode { focusSearch() } else { return false }
+            switch mode {
+            case .search, .view: focusSearch()
+            case .tag: return false
+            }
         default:
             return false
         }

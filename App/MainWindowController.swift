@@ -84,6 +84,7 @@ final class MainWindowController: NSWindowController {
 
         sidebarVC.onSelectNote = { [weak self] url in self?.open(noteAt: url) }
         sidebarVC.onSelectFixed = { [weak self] fixed in self?.showFixed(fixed) }
+        sidebarVC.onSelectView = { [weak self] ref in self?.showView(ref) }
         sidebarVC.onCurrentNoteRemoved = { [weak self] in self?.showEmpty() }
         searchVC.onOpenNote = { [weak self] url in
             self?.open(noteAt: url)
@@ -170,7 +171,8 @@ final class MainWindowController: NSWindowController {
 
     /// Dev-only: NOIETS_OPEN=<link target> opens a note by name;
     /// NOIETS_SCROLL_TO=<needle> scrolls the editor to the first occurrence;
-    /// NOIETS_SHOW=search|recent|trash opens a fixed sidebar view.
+    /// NOIETS_SHOW=search|views|trash opens a fixed sidebar view;
+    /// NOIETS_VIEW_QUERY=<noql> opens a probe view with that query.
     private func applyDevHooks() {
         let env = ProcessInfo.processInfo.environment
         if let name = env["NOIETS_OPEN"], !name.isEmpty {
@@ -178,9 +180,12 @@ final class MainWindowController: NSWindowController {
         }
         switch env["NOIETS_SHOW"] {
         case "search": showFixed(.search)
-        case "recent": showFixed(.recent)
+        case "views", "recent": showFixed(.views)
         case "trash": showFixed(.trash)
         default: break
+        }
+        if let query = env["NOIETS_VIEW_QUERY"], !query.isEmpty {
+            showView(ViewRef(name: "Probe", query: query, isBuiltin: false))
         }
         if let needle = env["NOIETS_SCROLL_TO"], !needle.isEmpty {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
@@ -256,15 +261,22 @@ final class MainWindowController: NSWindowController {
             searchVC.show(mode: .search)
             hostVC.show(searchVC)
             searchVC.focusSearch()
-        case .recent:
-            searchVC.show(mode: .recent)
-            hostVC.show(searchVC)
-            searchVC.focusList() // j/k works straight away
+        case .views:
+            showView(.recent) // built-in first view keeps the old Recent flow
         case .trash:
             trashVC.reload()
             hostVC.show(trashVC)
             trashVC.focusList()
         }
+        window?.title = session.vault.name
+    }
+
+    /// Opens a sidebar view (built-in Recent or a saved query).
+    func showView(_ ref: ViewRef) {
+        session.flushPendingSave()
+        searchVC.show(mode: .view(ref))
+        hostVC.show(searchVC)
+        searchVC.focusList() // j/k works straight away
         window?.title = session.vault.name
     }
 
@@ -436,7 +448,7 @@ final class MainWindowController: NSWindowController {
             ("New Note", "square.and.pencil", { [weak self] in self?.newNote(nil) }),
             ("New Folder", "folder.badge.plus", { [weak self] in self?.newFolder(nil) }),
             ("Search Vault", "magnifyingglass", { [weak self] in self?.searchVault(nil) }),
-            ("Recent Notes", "clock", { [weak self] in self?.sidebarVC.selectFixed(.recent) }),
+            ("Recent Notes", "clock", { [weak self] in self?.sidebarVC.selectFixed(.views) }),
             ("Open Trash", "trash", { [weak self] in self?.sidebarVC.selectFixed(.trash) }),
             ("Toggle Sidebar", "sidebar.left", { [weak self] in self?.toggleSidebarPane(nil) }),
             ("Reveal in Finder", "finder", { [weak self] in self?.revealInFinder(nil) }),

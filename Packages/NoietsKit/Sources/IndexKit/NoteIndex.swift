@@ -106,6 +106,27 @@ public final class NoteIndex: Sendable {
                 t.column("rangeLength", .integer).notNull()
             }
         }
+        migrator.registerMigration("v2") { db in
+            // Frontmatter properties, queryable by saved views.
+            try db.create(table: "note_prop") { t in
+                t.column("noteId", .integer).notNull().indexed()
+                    .references("note", onDelete: .cascade)
+                t.column("key", .text).notNull()
+                t.column("value", .text).notNull()
+            }
+            try db.create(index: "note_prop_key_value", on: "note_prop",
+                          columns: ["key", "value"])
+            // The index is a rebuildable cache: wipe note rows so the
+            // launch-time reconcile() re-extracts everything (populating
+            // note_prop for pre-existing notes). Children first — migrations
+            // run with foreign keys off, so ON DELETE CASCADE doesn't fire
+            // and orphans would fail GRDB's end-of-migration FK check.
+            try db.execute(sql: "DELETE FROM link")
+            try db.execute(sql: "DELETE FROM note_tag")
+            try db.execute(sql: "DELETE FROM note_fts")
+            try db.execute(sql: "DELETE FROM tag")
+            try db.execute(sql: "DELETE FROM note")
+        }
         return migrator
     }
 
@@ -156,6 +177,17 @@ public final class NoteIndex: Sendable {
                     """,
                     arguments: [noteId, tag]
                 )
+            }
+
+            // Frontmatter properties (one row per list element).
+            try db.execute(sql: "DELETE FROM note_prop WHERE noteId = ?", arguments: [noteId])
+            for (key, values) in extracted.props {
+                for value in values {
+                    try db.execute(
+                        sql: "INSERT INTO note_prop(noteId, key, value) VALUES(?, ?, ?)",
+                        arguments: [noteId, key, value.trimmingCharacters(in: .whitespaces)]
+                    )
+                }
             }
 
             // Outgoing links. Resolution is batch-level: callers run
