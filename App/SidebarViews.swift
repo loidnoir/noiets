@@ -133,19 +133,21 @@ final class SidebarCellView: NSTableCellView {
     }
 
     static func make(in tableView: NSTableView, title: String, symbol: String?, isFolder: Bool,
-                     image: NSImage? = nil, prominent: Bool? = nil) -> SidebarCellView
+                     image: NSImage? = nil, prominent: Bool? = nil,
+                     tint: NSColor? = nil) -> SidebarCellView
     {
         let cell =
             tableView.makeView(withIdentifier: reuseID, owner: nil) as? SidebarCellView
             ?? SidebarCellView(frame: .zero)
         cell.identifier = reuseID
         cell.configure(title: title, symbol: symbol, isFolder: isFolder,
-                       image: image, prominent: prominent)
+                       image: image, prominent: prominent, tint: tint)
         return cell
     }
 
     private func configure(title: String, symbol: String?, isFolder: Bool,
-                           image: NSImage?, prominent: Bool?) {
+                           image: NSImage?, prominent: Bool?, tint: NSColor?) {
+        icon.contentTintColor = tint ?? UITheme.sidebarSecondaryText
         label.stringValue = title
         // Prominent rows (the fixed sidebar items) use the larger label; list
         // rows keep the compact one even when they carry a type icon.

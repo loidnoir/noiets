@@ -976,7 +976,8 @@ extension SidebarViewController: NSOutlineViewDelegate {
         case .view(let ref):
             return SidebarCellView.make(
                 in: outlineView, title: ref.name, symbol: nil, isFolder: false,
-                prominent: false
+                image: AppIcons.folder(size: 15), prominent: false,
+                tint: UITheme.modeNormalText
             )
         }
     }
