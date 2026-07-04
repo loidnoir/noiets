@@ -128,6 +128,7 @@ enum SelfTest {
                 out["images"] = imageResolutionChecks(wc, editorView)
                 out["paneNav"] = paneNavChecks(wc, editorView, window: window)
                 out["views"] = viewsChecks(wc, editorView, window: window)
+                out["docs"] = docsChecks(wc, editorView, window: window)
             }
             if let outline = outlines.first {
                 out["sidebarRows"] = outline.numberOfRows
@@ -745,6 +746,65 @@ enum SelfTest {
             && Vault.hasHiddenComponent(".trash/x.md")
             && !Vault.hasHiddenComponent("Notes/x.md")
 
+        return result
+    }
+
+    /// The built-in read-only docs page: caret movement (incl. ⌃d/⌃u
+    /// half-page hops) must work exactly like a note, while every edit is
+    /// rejected. Regression: isEditable=false turned moveDown into view
+    /// scrolling and broke ⌃d.
+    private static func docsChecks(
+        _ wc: MainWindowController,
+        _ editorView: MarkdownEditorView,
+        window: NSWindow
+    ) -> [String: Any] {
+        var result: [String: Any] = [:]
+        let tv = editorView.textView
+
+        func key(_ ch: String, keyCode: UInt16 = 0, control: Bool = false) {
+            guard let event = NSEvent.keyEvent(
+                with: .keyDown, location: .zero,
+                modifierFlags: control ? [.control] : [],
+                timestamp: 0, windowNumber: window.windowNumber, context: nil,
+                characters: ch, charactersIgnoringModifiers: ch,
+                isARepeat: false, keyCode: keyCode
+            ) else { return }
+            tv.keyDown(with: event)
+        }
+
+        wc.openDocs()
+        window.makeFirstResponder(tv)
+        key("\u{1B}", keyCode: 53) // normal mode
+        let length = (tv.string as NSString).length
+        result["docsLoaded"] = length > 500
+
+        tv.setSelectedRange(NSRange(location: 0, length: 0))
+        key("d", control: true)
+        let afterHalfDown = tv.selectedRange().location
+        key("d", control: true)
+        let afterFullDown = tv.selectedRange().location
+        key("u", control: true)
+        let afterHalfUp = tv.selectedRange().location
+        result["docsCtrlDTrace"] = [afterHalfDown, afterFullDown, afterHalfUp]
+        result["docsCtrlDMoves"] = afterHalfDown > 50
+        result["docsCtrlDKeepsMoving"] = afterFullDown > afterHalfDown
+        result["docsCtrlUMovesBack"] = afterHalfUp < afterFullDown
+
+        // j/k still line-step, and edits are rejected.
+        let before = tv.selectedRange().location
+        key("j")
+        result["docsJMoves"] = tv.selectedRange().location != before
+        let textBefore = tv.string
+        key("d"); key("d") // dd must not mutate a read-only document
+        key("i")
+        tv.insertText("X", replacementRange: tv.selectedRange())
+        key("\u{1B}", keyCode: 53)
+        result["docsRejectsEdits"] = tv.string == textBefore
+
+        // Back to a note so later state is sane.
+        if let first = wc.session.firstNote() {
+            wc.open(noteAt: first)
+        }
         return result
     }
 

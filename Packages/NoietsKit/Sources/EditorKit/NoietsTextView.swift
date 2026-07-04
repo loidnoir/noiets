@@ -18,6 +18,12 @@ public final class NoietsTextView: NSTextView {
     var verticalGoalX: CGFloat?
     var inVerticalMove = false
 
+    /// Read-only document (the built-in docs): every change is rejected at
+    /// the single text-change gate. The view stays `isEditable` so caret
+    /// movement keeps normal semantics — a non-editable NSTextView turns
+    /// moveDown: into view scrolling and ⌃d/⌃u break.
+    public var isReadOnlyDocument = false
+
     /// Builds a fully configured TextKit 2 editor view.
     public static func makeTextKit2(theme: EditorTheme) -> NoietsTextView {
         let tv = NoietsTextView(usingTextLayoutManager: true)
@@ -105,6 +111,13 @@ public final class NoietsTextView: NSTextView {
         let result = super.resignFirstResponder()
         if result { DispatchQueue.main.async { [weak self] in self?.onFocusChange?() } }
         return result
+    }
+
+    public override func shouldChangeText(
+        in affectedCharRange: NSRange, replacementString: String?
+    ) -> Bool {
+        if isReadOnlyDocument { return false }
+        return super.shouldChangeText(in: affectedCharRange, replacementString: replacementString)
     }
 
     public override func keyDown(with event: NSEvent) {
