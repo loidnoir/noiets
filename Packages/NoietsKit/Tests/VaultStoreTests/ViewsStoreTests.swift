@@ -61,18 +61,6 @@ private func makeVault() throws -> Vault {
     }
 }
 
-@Suite struct LocksStoreTests {
-    @Test func roundTripAndToggle() throws {
-        let vault = try makeVault()
-        #expect(LocksStore.load(vault: vault).isEmpty)
-        LocksStore.setLocked("Work/Plan.md", true, vault: vault)
-        LocksStore.setLocked("Note.md", true, vault: vault)
-        #expect(LocksStore.load(vault: vault) == ["Work/Plan.md", "Note.md"])
-        LocksStore.setLocked("Note.md", false, vault: vault)
-        #expect(LocksStore.load(vault: vault) == ["Work/Plan.md"])
-    }
-}
-
 @Suite struct HiddenComponentTests {
     @Test func detectsDotComponents() {
         #expect(Vault.hasHiddenComponent(".trash/a.md"))

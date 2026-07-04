@@ -45,14 +45,14 @@ public final class NoteIndex: Sendable {
     // MARK: Setup
 
     /// On-disk index for a vault (Application Support/Noiets/<vault-hash>/).
+    /// The database lives INSIDE the project (`.noiets/index.sqlite`), so it
+    /// travels with the folder and survives reinstalls. Note rows/FTS/tags
+    /// stay rebuildable from the markdown, but the `lock` table is user data
+    /// — migrations must never wipe it. (The Reindexer ignores dot-component
+    /// paths, so the DB's own writes never trigger reindexing.)
     public convenience init(vault: Vault) throws {
-        let fm = FileManager.default
-        let support = try fm.url(for: .applicationSupportDirectory, in: .userDomainMask,
-                                 appropriateFor: nil, create: true)
-        let digest = SHA256.hash(data: Data(vault.rootURL.path.utf8))
-        let hash = digest.map { String(format: "%02x", $0) }.joined().prefix(12)
-        let dir = support.appendingPathComponent("Noiets/\(hash)", isDirectory: true)
-        try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        let dir = vault.rootURL.appendingPathComponent(".noiets", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         try self.init(vault: vault, databaseURL: dir.appendingPathComponent("index.sqlite"))
     }
 
@@ -127,7 +127,43 @@ public final class NoteIndex: Sendable {
             try db.execute(sql: "DELETE FROM tag")
             try db.execute(sql: "DELETE FROM note")
         }
+        migrator.registerMigration("v3") { db in
+            // Write-locked notes. USER DATA, not cache — future migrations
+            // that wipe the rebuildable tables must leave this one alone.
+            try db.create(table: "lock") { t in
+                t.column("relPath", .text).primaryKey()
+            }
+        }
         return migrator
+    }
+
+    // MARK: - Locks
+
+    public func lockedRelPaths() throws -> Set<String> {
+        try pool.read { db in
+            Set(try String.fetchAll(db, sql: "SELECT relPath FROM lock"))
+        }
+    }
+
+    public func isLocked(relPath: String) throws -> Bool {
+        try pool.read { db in
+            try Bool.fetchOne(
+                db, sql: "SELECT EXISTS(SELECT 1 FROM lock WHERE relPath = ?)",
+                arguments: [relPath]
+            ) ?? false
+        }
+    }
+
+    public func setLocked(relPath: String, _ locked: Bool) throws {
+        try pool.write { db in
+            if locked {
+                try db.execute(sql: "INSERT OR IGNORE INTO lock(relPath) VALUES(?)",
+                               arguments: [relPath])
+            } else {
+                try db.execute(sql: "DELETE FROM lock WHERE relPath = ?",
+                               arguments: [relPath])
+            }
+        }
     }
 
     // MARK: - Writes (called from the Reindexer)

@@ -75,8 +75,8 @@ model). Copying always yields raw markdown.
 
 `⌘L` locks the open note: it renders fully — the caret's line never reverts to raw
 markup — and every edit is rejected, while navigation and copying keep working. The mode
-bar shows `LOCKED`. `⌘L` again unlocks. Locks are per-project (`.noiets/locks.json`) and
-survive reinstalls. This very docs page is permanently in that state.
+bar shows `LOCKED`. `⌘L` again unlocks. Locks live in the project's own database, so they
+survive reinstalls and travel with the folder. This very docs page is permanently locked.
 
 ## Views
 
@@ -127,8 +127,7 @@ back into the folder it came from; if that folder is gone, it lands in the proje
 | `assets/` | pasted images |
 | `.trash/` | trashed items (+ restore origins) |
 | `.noiets/views.json` | saved views |
-| `.noiets/locks.json` | write-locked notes |
-| Application Support | the search index — a cache, safe to delete |
+| `.noiets/index.sqlite` | search index + note locks (stays with the project) |
 
 Updates install themselves (Sparkle): the app checks releases in the background, or use
 **Noiets → Check for Updates…**.

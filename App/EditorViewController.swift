@@ -66,10 +66,15 @@ final class EditorViewController: NSViewController {
     }
 
     func display(text: String, readOnly: Bool = false) {
-        isReadOnly = readOnly
         editor.isHidden = false
         emptyLabel.isHidden = true
         editor.load(text: text)
+        setReadOnly(readOnly)
+    }
+
+    /// Flips the lock state in place — no reload, caret and scroll stay put.
+    func setReadOnly(_ readOnly: Bool) {
+        isReadOnly = readOnly
         editor.setLocked(readOnly)
     }
 

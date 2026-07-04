@@ -155,12 +155,14 @@ final class MainWindowController: NSWindowController {
             if let range { self?.editorVC.jump(to: range) }
         }
 
+        // Index first: lock state lives in the project database, and the
+        // first open below already needs it.
+        session.startIndexing()
+
         if let first = session.firstNote() {
             open(noteAt: first)
             sidebarVC.select(url: first, notify: false)
         }
-
-        session.startIndexing()
         startObservingFocus()
 
         if ProcessInfo.processInfo.environment["NOIETS_SHOW_INSPECTOR"] == "1" {
@@ -231,15 +233,18 @@ final class MainWindowController: NSWindowController {
     }
 
     /// ⌘L: toggles write-lock on the open note (locked notes render fully —
-    /// no raw source on the caret line — and reject every edit).
+    /// no raw source on the caret line — and reject every edit). The state
+    /// flips in place: caret and scroll position stay where they are.
     @objc func toggleNoteLock(_: Any?) {
         guard let url = session.currentNoteURL else {
             NSSound.beep() // the built-in docs page can't be unlocked
             return
         }
         session.flushPendingSave()
-        session.setLocked(url, !session.isLocked(url))
-        open(noteAt: url) // re-display with the new state
+        let locked = !session.isLocked(url)
+        session.setLocked(url, locked)
+        editorVC.setReadOnly(locked)
+        updateVimBar(mode: nil)
     }
 
     /// [[target]] navigation with Obsidian-style create-on-missing.

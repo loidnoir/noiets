@@ -221,6 +221,42 @@ private func put(
         #expect(try index.notes(matching: ViewQuery.parse("status:*")).isEmpty)
     }
 
+    /// Locks are user data in the project database: they persist across
+    /// index reopens (unlike the rebuildable cache tables) and stay fast at
+    /// four-digit lock counts.
+    @Test func locksPersistAcrossReopenAndScale() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("noiets-locks-\(UUID().uuidString).sqlite")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let vault = Vault(rootURL: URL(fileURLWithPath: "/tmp/fake-vault"))
+
+        let index = try NoteIndex(vault: vault, databaseURL: url)
+        try index.setLocked(relPath: "a.md", true)
+        try index.setLocked(relPath: "b.md", true)
+        try index.setLocked(relPath: "b.md", false)
+        #expect(try index.lockedRelPaths() == ["a.md"])
+        #expect(try index.isLocked(relPath: "a.md"))
+        #expect(try !index.isLocked(relPath: "b.md"))
+
+        // Reopen the same file: locks survive (cache tables would not).
+        let reopened = try NoteIndex(vault: vault, databaseURL: url)
+        #expect(try reopened.lockedRelPaths() == ["a.md"])
+
+        // Scale: 10k locks, point lookups stay instant.
+        let clock = ContinuousClock()
+        let insertTime = try clock.measure {
+            for i in 0..<10_000 {
+                try reopened.setLocked(relPath: "Folder \(i % 100)/Note \(i).md", true)
+            }
+        }
+        let lookupTime = clock.measure {
+            let hit = (try? reopened.isLocked(relPath: "Folder 1/Note 1.md")) == true
+            #expect(hit)
+        }
+        print("locks scale: insert(10k)=\(insertTime) lookup=\(lookupTime)")
+        #expect(lookupTime < .milliseconds(50))
+    }
+
     @Test func propRowsReplacedOnReupsert() throws {
         let index = try makeIndex()
         try put(index, "a.md", "---\nstatus: draft\n---\nbody")

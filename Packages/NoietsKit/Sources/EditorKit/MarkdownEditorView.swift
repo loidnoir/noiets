@@ -382,6 +382,19 @@ public final class MarkdownEditorView: NSView {
         highlighter.alwaysPreview = locked
         if let storage = textView.textStorage {
             highlighter.restyleAll(storage)
+            if !locked {
+                // Unlocking: re-establish the caret's paragraph as active so
+                // it reverts to raw source without requiring a caret move.
+                let text = textView.string as NSString
+                let selection = textView.selectedRange()
+                if selection.location != NSNotFound, text.length > 0 {
+                    let paragraph = text.paragraphRange(for: NSRange(
+                        location: min(selection.location, text.length),
+                        length: min(selection.length, max(0, text.length - selection.location))
+                    ))
+                    highlighter.updateActiveParagraph(storage, to: paragraph)
+                }
+            }
         }
         if let layoutManager = textView.textLayoutManager {
             layoutManager.invalidateLayout(for: layoutManager.documentRange)

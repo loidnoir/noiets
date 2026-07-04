@@ -788,20 +788,24 @@ enum SelfTest {
         _ = boldMarkerHidden() // position caret; selection change restyles
         result["unlockedRevealsSource"] = !boldMarkerHidden()
 
-        // Lock via the real menu action.
+        // Lock via the real menu action — the caret must not move.
+        let caretBefore = tv.selectedRange().location
         wc.toggleNoteLock(nil)
+        result["lockKeepsCaret"] = tv.selectedRange().location == caretBefore
         result["lockedStaysRendered"] = boldMarkerHidden()
         let before = tv.string
         editorView.vim.target?.replace(NSRange(location: 0, length: 1), with: "X")
         result["lockedRejectsEdits"] = tv.string == before
             && (try? String(contentsOf: url, encoding: .utf8))?.contains("Lock") == true
-        result["lockPersisted"] = LocksStore.load(vault: vault)
-            .contains(vault.relativePath(of: url))
+        result["lockPersisted"] = ((try? wc.session.index?.lockedRelPaths()) ?? [])?
+            .contains(vault.relativePath(of: url)) == true
 
-        // Unlock restores normal editing.
+        // Unlock restores normal editing, caret still in place.
+        let caretBeforeUnlock = tv.selectedRange().location
         wc.toggleNoteLock(nil)
+        result["unlockKeepsCaret"] = tv.selectedRange().location == caretBeforeUnlock
         result["unlockRestores"] = !boldMarkerHidden()
-            && LocksStore.load(vault: vault).isEmpty
+            && ((try? wc.session.index?.lockedRelPaths()) ?? [])?.isEmpty == true
         return result
     }
 

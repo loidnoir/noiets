@@ -23,8 +23,6 @@ final class VaultSession {
     private(set) var savedViews: [SavedView] = []
     private var viewObservers: [() -> Void] = []
 
-    /// Notes locked for writing (rel-paths) — persisted in the vault.
-    private(set) var lockedRelPaths: Set<String> = []
 
     func onViewsChange(_ observer: @escaping () -> Void) {
         viewObservers.append(observer)
@@ -46,19 +44,16 @@ final class VaultSession {
         self.vault = vault
         self.tree = VaultScanner.scan(vault)
         self.savedViews = ViewsStore.load(vault: vault)
-        self.lockedRelPaths = LocksStore.load(vault: vault)
     }
 
-    // MARK: Locks
+    // MARK: Locks (stored in the project database — persistent user data)
 
     func isLocked(_ url: URL) -> Bool {
-        lockedRelPaths.contains(vault.relativePath(of: url))
+        (try? index?.isLocked(relPath: vault.relativePath(of: url))) == true
     }
 
     func setLocked(_ url: URL, _ locked: Bool) {
-        let relPath = vault.relativePath(of: url)
-        LocksStore.setLocked(relPath, locked, vault: vault)
-        lockedRelPaths = LocksStore.load(vault: vault)
+        try? index?.setLocked(relPath: vault.relativePath(of: url), locked)
     }
 
     // MARK: Saved views
@@ -132,13 +127,12 @@ final class VaultSession {
         for observer in treeObservers {
             observer()
         }
-        // views.json / locks.json may have been edited externally (git pull).
+        // views.json may have been edited externally (git pull, Finder).
         let fresh = ViewsStore.load(vault: vault)
         if fresh != savedViews {
             savedViews = fresh
             notifyViewObservers()
         }
-        lockedRelPaths = LocksStore.load(vault: vault)
     }
 
     func firstNote() -> URL? {
