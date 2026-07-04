@@ -86,8 +86,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let defaultVault = documents.appendingPathComponent("Noiets", isDirectory: true)
 
         let panel = NSOpenPanel()
-        panel.message = "Choose a folder for your Noiets vault. Notes live there as plain Markdown files."
-        panel.prompt = "Use as Vault"
+        panel.message = "Choose a folder for your Noiets project. Notes live there as plain Markdown files."
+        panel.prompt = "Use as Project"
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.canCreateDirectories = true
@@ -103,8 +103,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func changeVault(_ sender: Any?) {
         let panel = NSOpenPanel()
-        panel.message = "Choose a different vault folder."
-        panel.prompt = "Use as Vault"
+        panel.message = "Choose a different project folder."
+        panel.prompt = "Use as Project"
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.canCreateDirectories = true

@@ -1,6 +1,6 @@
 # Noiets
 
-Local-first markdown notes. Your vault is a plain folder of `.md` files — portable,
+Local-first markdown notes. Your project is a plain folder of `.md` files — portable,
 git-friendly, Obsidian-compatible. The app never locks anything in: the search index is a
 rebuildable cache, and everything you create is a file you own.
 
@@ -30,10 +30,11 @@ for the editor, `TREE` or `LIST` elsewhere — plus search counts and pending ke
 | --- | --- |
 | `⌘O` | quick-open notes by name |
 | `⌘P` | command palette (type `#` to browse tags) |
-| `⇧⌘F` | search the vault |
+| `⇧⌘F` | search the project |
 | `⌘N` / `⇧⌘N` | new note / new folder |
 | `⌘S` | toggle the sidebar |
 | `⌥⌘0` | toggle backlinks + outline panel |
+| `⌘L` | lock / unlock the note |
 | `⇧⌘E` | export the note as HTML |
 | `⌥⌘R` | reveal the note in Finder |
 
@@ -70,6 +71,13 @@ model). Copying always yields raw markdown.
 - **Frontmatter** — a leading `---` block is preserved byte-for-byte; its `key: value`
   properties (scalars, `[a, b]` lists) power views (below); `tags:` merges with inline tags
 
+## Locked notes
+
+`⌘L` locks the open note: it renders fully — the caret's line never reverts to raw
+markup — and every edit is rejected, while navigation and copying keep working. The mode
+bar shows `LOCKED`. `⌘L` again unlocks. Locks are per-project (`.noiets/locks.json`) and
+survive reinstalls. This very docs page is permanently in that state.
+
 ## Views
 
 Views replace bookmarks, recents, and smart folders with one idea: **a saved query**.
@@ -92,7 +100,7 @@ tag:project folder:Work draft status:done modified:<7d sort:-title limit:50
 
 When the query differs from what's saved, a **Save** button appears (`⌘⏎`). Saved views
 are rows in the sidebar — `Enter` opens, `r` renames, `dd` deletes (notes are untouched).
-Definitions live in `.noiets/views.json` inside your vault, so they sync with it.
+Definitions live in `.noiets/views.json` inside your project, so they sync with it.
 
 ## Sidebar tree
 
@@ -108,8 +116,8 @@ All lists speak the same keys: `j k gg G` with counts, `Enter` opens, `dd` acts
 (trash / delete permanently), `/` focuses the query field, `Esc` stays in the list,
 `⌃h` returns to the tree.
 
-**Trash** is the vault-local `.trash` folder (Obsidian-compatible). Restore puts an item
-back into the folder it came from; if that folder is gone, it lands in the vault root.
+**Trash** is the project-local `.trash` folder (Obsidian-compatible). Restore puts an item
+back into the folder it came from; if that folder is gone, it lands in the project root.
 
 ## Files on disk
 
@@ -119,6 +127,7 @@ back into the folder it came from; if that folder is gone, it lands in the vault
 | `assets/` | pasted images |
 | `.trash/` | trashed items (+ restore origins) |
 | `.noiets/views.json` | saved views |
+| `.noiets/locks.json` | write-locked notes |
 | Application Support | the search index — a cache, safe to delete |
 
 Updates install themselves (Sparkle): the app checks releases in the background, or use

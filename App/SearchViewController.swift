@@ -46,7 +46,7 @@ final class SearchViewController: NSViewController {
         let container = ColorView(color: theme.background)
         view = container
 
-        searchField.placeholderString = "Search vault"
+        searchField.placeholderString = "Search project"
         searchField.font = .systemFont(ofSize: 15)
         searchField.focusRingType = .none
         searchField.target = self
@@ -129,7 +129,7 @@ final class SearchViewController: NSViewController {
         case .search:
             headerLabel.stringValue = "Search"
             searchField.isHidden = false
-            searchField.placeholderString = "Search vault"
+            searchField.placeholderString = "Search project"
             searchField.stringValue = lastSearchText
         case .tag(let name):
             headerLabel.stringValue = "#\(name)"
@@ -186,7 +186,7 @@ final class SearchViewController: NSViewController {
         guard let window = view.window else { return }
         let alert = NSAlert()
         alert.messageText = "Save View"
-        alert.informativeText = "The query is saved to this vault and listed in the sidebar."
+        alert.informativeText = "The query is saved to this project and listed in the sidebar."
         alert.addButton(withTitle: "Save")
         alert.addButton(withTitle: "Cancel")
         let field = NSTextField(string: "")

@@ -215,6 +215,7 @@ final class MainWindowController: NSWindowController {
             imageVC.focusImage()
             return
         }
+        let locked = session.isLocked(url)
         guard let text = session.readNote(at: url) else {
             NSSound.beep()
             return
@@ -222,10 +223,23 @@ final class MainWindowController: NSWindowController {
         session.noteOpened(url)
         hostVC.show(editorVC)
         editorVC.editor.noteFolderURL = url.deletingLastPathComponent()
-        editorVC.display(text: text)
+        editorVC.display(text: text, readOnly: locked)
         window?.title = url.deletingPathExtension().lastPathComponent
         editorVC.focusEditor()
         inspectorVC.update(noteURL: url, text: text)
+        updateVimBar(mode: nil)
+    }
+
+    /// ⌘L: toggles write-lock on the open note (locked notes render fully —
+    /// no raw source on the caret line — and reject every edit).
+    @objc func toggleNoteLock(_: Any?) {
+        guard let url = session.currentNoteURL else {
+            NSSound.beep() // the built-in docs page can't be unlocked
+            return
+        }
+        session.flushPendingSave()
+        session.setLocked(url, !session.isLocked(url))
+        open(noteAt: url) // re-display with the new state
     }
 
     /// [[target]] navigation with Obsidian-style create-on-missing.
@@ -344,6 +358,11 @@ final class MainWindowController: NSWindowController {
                 sidebarVC.setVimStatus("LIST")
                 return
             }
+        }
+        // Locked documents (docs page, ⌘L-locked notes) read, never write.
+        if hostVC.current === editorVC || hostVC.current == nil, editorVC.isReadOnly {
+            sidebarVC.setVimStatus("LOCKED")
+            return
         }
         let current = mode ?? editorVC.editor.vim.mode
         let text =
@@ -485,7 +504,12 @@ extension MainWindowController: NSMenuItemValidation {
             #selector(MainWindowController.revealInFinder(_:)),
             #selector(MainWindowController.moveNoteToTrash(_:)),
             #selector(MainWindowController.exportHTML(_:)),
+            #selector(MainWindowController.toggleNoteLock(_:)),
         ]
+        if menuItem.action == #selector(MainWindowController.toggleNoteLock(_:)),
+           let url = session.currentNoteURL {
+            menuItem.title = session.isLocked(url) ? "Unlock Note" : "Lock Note"
+        }
         if let action = menuItem.action, needsOpenNote.contains(action) {
             return session.currentNoteURL != nil
         }

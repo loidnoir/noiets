@@ -372,6 +372,22 @@ public final class MarkdownEditorView: NSView {
     public var string: String { textView.string }
 
     /// Replaces the buffer with a freshly loaded note (resets undo history).
+    /// Locked documents: fully rendered (the caret's line never reverts to
+    /// raw source) and immutable (every change rejected at the text gate).
+    public func setLocked(_ locked: Bool) {
+        guard highlighter.alwaysPreview != locked || textView.isReadOnlyDocument != locked else {
+            return
+        }
+        textView.isReadOnlyDocument = locked
+        highlighter.alwaysPreview = locked
+        if let storage = textView.textStorage {
+            highlighter.restyleAll(storage)
+        }
+        if let layoutManager = textView.textLayoutManager {
+            layoutManager.invalidateLayout(for: layoutManager.documentRange)
+        }
+    }
+
     public func load(text: String) {
         autocomplete.hide()
         vim.reset()

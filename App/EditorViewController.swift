@@ -70,9 +70,7 @@ final class EditorViewController: NSViewController {
         editor.isHidden = false
         emptyLabel.isHidden = true
         editor.load(text: text)
-        // NOT isEditable=false — that turns caret movement into view
-        // scrolling; the change gate rejects edits instead.
-        editor.textView.isReadOnlyDocument = readOnly
+        editor.setLocked(readOnly)
     }
 
     func displayEmpty() {

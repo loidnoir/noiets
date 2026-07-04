@@ -43,11 +43,13 @@ public final class LivePreviewLayoutController: NSObject {
         let line = scan.lines[lineIndex]
 
         let active = highlighter.map { h in
-            NSIntersectionRange(line.range, h.activeParagraphRange).length > 0
-                || (h.activeParagraphRange.length == 0
-                    && h.activeParagraphRange.location >= line.range.location
-                    && h.activeParagraphRange.location <= line.range.location + line.range.length)
-                || !h.livePreviewEnabled
+            !h.alwaysPreview && (
+                NSIntersectionRange(line.range, h.activeParagraphRange).length > 0
+                    || (h.activeParagraphRange.length == 0
+                        && h.activeParagraphRange.location >= line.range.location
+                        && h.activeParagraphRange.location <= line.range.location + line.range.length)
+                    || !h.livePreviewEnabled
+            )
         } ?? true
 
         switch line.kind {

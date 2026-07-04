@@ -41,6 +41,7 @@ enum MainMenu {
                        i.keyEquivalentModifierMask = [.command, .shift]; return i }())
         file.addItem(.separator())
         file.addItem(withTitle: "Save", action: Selector(("saveNote:")), keyEquivalent: "")
+        file.addItem(withTitle: "Lock Note", action: Selector(("toggleNoteLock:")), keyEquivalent: "l")
         file.addItem(.separator())
         file.addItem({ let i = NSMenuItem(title: "Reveal in Finder", action: Selector(("revealInFinder:")), keyEquivalent: "r")
                        i.keyEquivalentModifierMask = [.command, .option]; return i }())
@@ -51,7 +52,7 @@ enum MainMenu {
         file.addItem({ let i = NSMenuItem(title: "Export as HTML…", action: Selector(("exportHTML:")), keyEquivalent: "e")
                        i.keyEquivalentModifierMask = [.command, .shift]; return i }())
         file.addItem(.separator())
-        file.addItem({ let i = NSMenuItem(title: "Change Vault…", action: Selector(("changeVault:")), keyEquivalent: "o")
+        file.addItem({ let i = NSMenuItem(title: "Change Project…", action: Selector(("changeVault:")), keyEquivalent: "o")
                        i.keyEquivalentModifierMask = [.command, .control]; return i }())
         main.addItem(submenu(file, title: "File"))
 
@@ -70,7 +71,7 @@ enum MainMenu {
                                           action: #selector(NSResponder.performTextFinderAction(_:)),
                                           keyEquivalent: "f")
                        i.tag = NSTextFinder.Action.showFindInterface.rawValue; return i }())
-        edit.addItem({ let i = NSMenuItem(title: "Search Vault…", action: Selector(("searchVault:")), keyEquivalent: "f")
+        edit.addItem({ let i = NSMenuItem(title: "Search Project…", action: Selector(("searchVault:")), keyEquivalent: "f")
                        i.keyEquivalentModifierMask = [.command, .shift]; return i }())
         main.addItem(submenu(edit, title: "Edit"))
 

@@ -129,6 +129,7 @@ enum SelfTest {
                 out["paneNav"] = paneNavChecks(wc, editorView, window: window)
                 out["views"] = viewsChecks(wc, editorView, window: window)
                 out["docs"] = docsChecks(wc, editorView, window: window)
+                out["locks"] = lockChecks(wc, editorView, window: window)
             }
             if let outline = outlines.first {
                 out["sidebarRows"] = outline.numberOfRows
@@ -746,6 +747,61 @@ enum SelfTest {
             && Vault.hasHiddenComponent(".trash/x.md")
             && !Vault.hasHiddenComponent("Notes/x.md")
 
+        return result
+    }
+
+    /// ⌘L note locking: locked notes render fully (the caret's paragraph
+    /// stays hidden-markup), reject edits, persist in .noiets/locks.json,
+    /// and unlock cleanly.
+    private static func lockChecks(
+        _ wc: MainWindowController,
+        _ editorView: MarkdownEditorView,
+        window: NSWindow
+    ) -> [String: Any] {
+        var result: [String: Any] = [:]
+        let tv = editorView.textView
+        let vault = wc.session.vault
+
+        // A scratch note with bold markup, opened for real.
+        guard let url = try? NoteIO.createNote(in: vault.rootURL, baseName: "LockProbe",
+                                               contents: "# Lock\n\nsome **bold** text\n")
+        else { return ["error": "FAIL: create"] }
+        defer {
+            wc.session.setLocked(url, false)
+            try? FileManager.default.removeItem(at: url)
+            wc.session.rescan()
+        }
+        wc.open(noteAt: url)
+
+        func boldMarkerHidden() -> Bool {
+            let text = tv.string as NSString
+            let marker = text.range(of: "**")
+            guard marker.location != NSNotFound, let storage = tv.textStorage else { return false }
+            // Put the caret INSIDE the bold span — unlocked would reveal raw.
+            tv.setSelectedRange(NSRange(location: marker.location + 3, length: 0))
+            let color = storage.attribute(.foregroundColor, at: marker.location,
+                                          effectiveRange: nil) as? NSColor
+            return color == .clear
+        }
+
+        // Unlocked: caret on the line reveals markers.
+        _ = boldMarkerHidden() // position caret; selection change restyles
+        result["unlockedRevealsSource"] = !boldMarkerHidden()
+
+        // Lock via the real menu action.
+        wc.toggleNoteLock(nil)
+        result["lockedStaysRendered"] = boldMarkerHidden()
+        let before = tv.string
+        editorView.vim.target?.replace(NSRange(location: 0, length: 1), with: "X")
+        result["lockedRejectsEdits"] = tv.string == before
+            && (try? String(contentsOf: url, encoding: .utf8))?.contains("Lock") == true
+        result["lockPersisted"] = LocksStore.load(vault: vault)
+            .contains(vault.relativePath(of: url))
+
+        // Unlock restores normal editing.
+        wc.toggleNoteLock(nil)
+        result["unlockRestores"] = !boldMarkerHidden()
+            && LocksStore.load(vault: vault).isEmpty
         return result
     }
 

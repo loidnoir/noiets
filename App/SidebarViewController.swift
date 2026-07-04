@@ -662,8 +662,8 @@ final class SidebarViewController: NSViewController {
             alert.messageText = "Move “\(node.title)” to Trash?"
             alert.informativeText =
                 node.isFolder
-                ? "The folder and everything inside it moves to the vault’s .trash."
-                : "The note moves to the vault’s .trash and can be restored from there."
+                ? "The folder and everything inside it moves to the project’s .trash."
+                : "The note moves to the project’s .trash and can be restored from there."
         } else {
             alert.messageText = "Move \(nodes.count) items to Trash?"
             let names = nodes.prefix(5).map(\.title).joined(separator: ", ")
@@ -699,7 +699,7 @@ final class SidebarViewController: NSViewController {
         let alert = NSAlert()
         alert.messageText = "Delete view “\(ref.name)”?"
         alert.informativeText =
-            "The saved query is removed from this vault. Notes are not affected."
+            "The saved query is removed from this project. Notes are not affected."
         alert.addButton(withTitle: "Delete View")
         alert.addButton(withTitle: "Cancel")
         alert.beginSheetModal(for: window) { [weak self] response in

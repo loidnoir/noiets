@@ -30,6 +30,10 @@ public final class IncrementalHighlighter: NSObject {
     /// Escape hatch: disables hiding entirely (plain highlight mode).
     public var livePreviewEnabled = true
 
+    /// Locked documents: every line stays rendered — the caret's paragraph
+    /// never reverts to raw source.
+    public var alwaysPreview = false
+
     private var scan: BlockScan?
     private var signature: [Int] = []
     private let codeEngine = BuiltinCodeHighlighter()
@@ -232,11 +236,11 @@ public final class IncrementalHighlighter: NSObject {
         }
 
         // Live Preview: on inactive lines, collapse the markup runs.
-        let isActive = !livePreviewEnabled
+        let isActive = !alwaysPreview && (!livePreviewEnabled
             || NSIntersectionRange(line.range, activeParagraphRange).length > 0
             || (activeParagraphRange.length == 0
                 && activeParagraphRange.location >= line.range.location
-                && activeParagraphRange.location <= line.range.location + line.range.length)
+                && activeParagraphRange.location <= line.range.location + line.range.length))
         if !isActive {
             // Rendered quotes: the bar sits on the text column edge and the
             // text indents to the shared list-text column.
