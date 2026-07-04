@@ -578,18 +578,17 @@ enum SelfTest {
         if let o = focusedOutline() { keyTo(o, "l", control: true) }
         result["ctrlLBackToEditor"] = inTree && window.firstResponder === tv
 
-        // Tree visual mode: v anchors, j extends (files only), esc collapses
-        // to the cursor but stays in the tree.
+        // Tree visual mode: v anchors, k extends (files only), esc collapses
+        // to the cursor but stays in the tree. Anchored at the BOTTOM — the
+        // last rows are always root notes, regardless of how many saved-view
+        // rows sit at the top.
         keyTo(tv, "h", control: true)
         if let outline = focusedOutline() {
-            keyTo(outline, "g")
-            keyTo(outline, "g")
-            keyTo(outline, "4")
-            keyTo(outline, "j") // over Views/Trash/Recent + spacer onto the tree
+            keyTo(outline, "G") // last row = a note
             keyTo(outline, "v")
-            keyTo(outline, "j")
+            keyTo(outline, "k")
             result["visualSelectsTwo"] = outline.selectedRowIndexes.count == 2
-            keyTo(outline, "j")
+            keyTo(outline, "k")
             result["visualExtendsThree"] = outline.selectedRowIndexes.count == 3
             keyTo(outline, "\u{1B}", keyCode: 53) // esc → collapse, stay in tree
             result["visualEscCollapses"] = outline.selectedRowIndexes.count == 1
