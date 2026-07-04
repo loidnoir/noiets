@@ -262,7 +262,7 @@ final class MainWindowController: NSWindowController {
             hostVC.show(searchVC)
             searchVC.focusSearch()
         case .views:
-            showView(.recent) // built-in first view keeps the old Recent flow
+            showView(.unnamed) // empty query = everything, newest first
         case .trash:
             trashVC.reload()
             hostVC.show(trashVC)

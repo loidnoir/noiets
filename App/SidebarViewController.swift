@@ -4,14 +4,15 @@ import VaultStore
 /// The left pane: Search / Recent / Trash, a hairline divider, then the vault
 /// folder tree with files as leaves. Flat NSOutlineView — no source-list
 /// vibrancy, no bubbles.
-/// A sidebar view row: a named NoQL query. `Recent` is built in (not stored,
-/// not deletable); the rest come from the vault's `.noiets/views.json`.
+/// A sidebar view row: a named NoQL query from the vault's
+/// `.noiets/views.json`. `unnamed` backs the fixed Views item itself — an
+/// empty query (everything, newest first) that saving turns into a real view.
 struct ViewRef: Equatable {
     var name: String
     var query: String
     var isBuiltin: Bool
 
-    static let recent = ViewRef(name: "Recent", query: "sort:modified", isBuiltin: true)
+    static let unnamed = ViewRef(name: "Views", query: "", isBuiltin: true)
 }
 
 @MainActor
@@ -193,9 +194,12 @@ final class SidebarViewController: NSViewController {
     private func rebuildItems() {
         itemsByURL.removeAll()
         var items: [Item] = Fixed.allCases.map { Item(.fixed($0)) }
-        items.append(Item(.view(.recent)))
-        items += session.savedViews.map {
-            Item(.view(ViewRef(name: $0.name, query: $0.query, isBuiltin: false)))
+        // Saved views sit in their own air-separated group; none by default.
+        if !session.savedViews.isEmpty {
+            items.append(Item(.separator))
+            items += session.savedViews.map {
+                Item(.view(ViewRef(name: $0.name, query: $0.query, isBuiltin: false)))
+            }
         }
         items.append(Item(.separator))
         items += session.tree.children.map(makeItem)

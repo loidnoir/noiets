@@ -556,11 +556,17 @@ enum SelfTest {
         let start = outline.selectedRow
         keyTo(outline, "3")
         keyTo(outline, "j")
+        func isSelectableRow(_ row: Int) -> Bool {
+            guard let item = outline.item(atRow: row) as? SidebarViewController.Item
+            else { return false }
+            if case .separator = item.kind { return false }
+            return true
+        }
         var hops = 0
         var probe = start
         while hops < 3, probe < outline.numberOfRows - 1 {
             probe += 1
-            if !(probe == 4) { hops += 1 } // row 4 is the spacer (after the Recent view row)
+            if isSelectableRow(probe) { hops += 1 } // spacers don't count
         }
         result["countJMultiplies"] = outline.selectedRow == probe
         keyTo(outline, "2")
@@ -699,15 +705,15 @@ enum SelfTest {
         let list = window.firstResponder as? NSTableView
         result["builtinRecentOpens"] = list != nil && !(list is NSOutlineView)
 
-        // The query field carries the built-in query and filters live.
+        // The unnamed view starts empty (= everything) and filters live.
         if let field = findViews(NSSearchField.self).first(where: { !$0.isHidden }) {
-            result["builtinQueryPrefilled"] = field.stringValue == "sort:modified"
+            result["builtinQueryPrefilled"] = field.stringValue.isEmpty
             field.stringValue = "sort:title limit:2"
             _ = field.sendAction(field.action, to: field.target)
             if let list {
                 result["liveQueryFilters"] = list.numberOfRows <= 2 && list.numberOfRows > 0
             }
-            field.stringValue = "sort:modified"
+            field.stringValue = ""
             _ = field.sendAction(field.action, to: field.target)
         }
 
