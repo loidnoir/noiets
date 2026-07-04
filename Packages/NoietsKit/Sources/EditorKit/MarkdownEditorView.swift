@@ -163,6 +163,12 @@ public final class MarkdownEditorView: NSView {
         vim.onStatus = { [weak self] status in
             self?.onVimStatus?(status)
         }
+        vim.onYank = { text in
+            // Yanks and deletes mirror to the system clipboard, so vim y/d/x
+            // and ⌘V in other apps compose.
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
+        }
         refreshCaretShape()
     }
 

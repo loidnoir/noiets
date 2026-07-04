@@ -19,6 +19,9 @@ public final class VimEngine {
     public var onStatus: ((String) -> Void)?
     /// Fired when the : command line opens/closes (editor shows line numbers).
     public var onCommandMode: ((Bool) -> Void)?
+    /// Fired whenever the yank register fills — yanks AND deletes/cuts
+    /// (y/yy, d/dd/D, x, c…) — so the host can mirror it to the clipboard.
+    public var onYank: ((String) -> Void)?
 
     // Pending command state
     private var count = 0
@@ -695,6 +698,9 @@ public final class VimEngine {
         }
         yankText = target.text.substring(with: range)
         yankLinewise = linewise
+        // Everything that fills the register — y/yy, d/dd/D, x, c… — also
+        // reaches the host (vim `clipboard=unnamed` behavior).
+        onYank?(yankText)
     }
 
     private func paste(after: Bool) {

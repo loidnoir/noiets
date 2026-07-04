@@ -454,6 +454,34 @@ private func type(_ engine: VimEngine, _ target: MockTarget, _ text: String) {
 // MARK: - Visual mode
 
 @MainActor
+@Suite struct YankClipboardTests {
+    @Test func yankAndDeleteFamiliesFireOnYank() {
+        let (e, t) = makeEngine("alpha beta\nsecond line\nthird", caret: 0)
+        var yanked: [String] = []
+        e.onYank = { yanked.append($0) }
+
+        send(e, "yy") // copy line
+        #expect(yanked.last == "alpha beta\n")
+        send(e, "yw") // copy word
+        #expect(yanked.last == "alpha ")
+        send(e, "ve") // visual select "alpha"
+        send(e, "y")
+        #expect(yanked.last == "alpha")
+
+        send(e, "x") // cut char
+        #expect(yanked.last == "a")
+        send(e, "dw") // cut word
+        #expect(yanked.last == "lpha ")
+        send(e, "D") // cut to line end
+        #expect(yanked.last == "beta")
+        send(e, "j")
+        send(e, "dd") // cut line
+        #expect(yanked.last == "second line\n")
+        #expect(t.buffer as String == "\nthird")
+    }
+}
+
+@MainActor
 @Suite struct SearchCounterTests {
     @Test func starShowsMatchIndexAndCount() {
         let (e, t) = makeEngine("foo bar\nfoo baz\nfoo", caret: 0) // engine holds t weakly
