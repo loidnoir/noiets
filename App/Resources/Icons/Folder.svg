@@ -1,11 +1,12 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<svg id="Layer_1" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500">
-  <defs>
-    <style>
-      .cls-1 {
-        fill: #d9d9d9;
-      }
-    </style>
-  </defs>
-  <path class="cls-1" d="M450.9,102.62h-196.25c-2.57,0-4.65-2.5-4.65-5.58h0c0-17.72-11.97-32.09-26.75-32.09H49.1c-14.77,0-26.75,14.37-26.75,32.09v305.92c0,17.72,11.97,32.09,26.75,32.09h401.81c14.77,0,26.75-14.37,26.75-32.09V134.71c0-17.72-11.97-32.09-26.75-32.09Z"/>
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg width="100%" height="100%" viewBox="0 0 2084 2084" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" xmlns:serif="http://www.serif.com/" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linejoin:round;stroke-miterlimit:2;">
+    <g id="Folder" transform="matrix(4.166667,0,0,4.166667,0,0)">
+        <rect x="0" y="0" width="500" height="500" style="fill:none;"/>
+        <g transform="matrix(1,0,0,1,450.9038,397.3771)">
+            <g id="Layer-1" serif:id="Layer 1">
+                <path d="M0,-294.754L-196.25,-294.754C-198.82,-294.754 -200.904,-297.254 -200.904,-300.338C-200.904,-318.062 -212.878,-332.43 -227.65,-332.43L-401.808,-332.43C-416.579,-332.43 -428.554,-318.062 -428.554,-300.338L-428.554,5.584C-428.554,23.308 -416.579,37.676 -401.808,37.676L0,37.676C14.771,37.676 26.746,23.308 26.746,5.584L26.746,-262.662C26.746,-280.386 14.771,-294.754 0,-294.754" style="fill:rgb(217,217,217);fill-rule:nonzero;"/>
+            </g>
+        </g>
+    </g>
 </svg>

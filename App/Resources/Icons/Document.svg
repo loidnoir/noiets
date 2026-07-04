@@ -1,12 +1,19 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<svg id="Layer_1" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500">
-  <defs>
-    <style>
-      .cls-1 {
-        fill: #d9d9d9;
-      }
-    </style>
-  </defs>
-  <path class="cls-1" d="M417.89,146.01v325.97c0,7.83-6.34,14.17-14.17,14.17H96.28c-7.83,0-14.17-6.34-14.17-14.17V28.03c0-7.83,6.34-14.17,14.17-14.17h189.46c7.87,0,14.25,6.38,14.25,14.25v79.8c0,13.17,10.68,23.85,23.85,23.85h79.8c7.87,0,14.25,6.38,14.25,14.25Z"/>
-  <path class="cls-1" d="M411.07,118.89h-85.56c-6.99,0-12.66-5.67-12.66-12.66V20.68c0-2.52,3.04-3.78,4.82-2l95.39,95.39c1.78,1.78.52,4.82-2,4.82Z"/>
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg width="100%" height="100%" viewBox="0 0 2084 2084" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" xmlns:serif="http://www.serif.com/" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linejoin:round;stroke-miterlimit:2;">
+    <g transform="matrix(1,0,0,1,-7031,0)">
+        <g id="Document" transform="matrix(4.166667,0,0,4.166667,7031.25,0)">
+            <rect x="0" y="0" width="500" height="500" style="fill:none;"/>
+            <g id="Layer-1" serif:id="Layer 1">
+                <g>
+                    <g transform="matrix(1,0,0,1,417.8875,353.995)">
+                        <path d="M0,-207.99L0,117.979C0,125.804 -6.343,132.147 -14.169,132.147L-321.607,132.147C-329.432,132.147 -335.775,125.804 -335.775,117.979L-335.775,-325.969C-335.775,-333.794 -329.432,-340.137 -321.607,-340.137L-132.147,-340.137C-124.279,-340.137 -117.901,-333.759 -117.901,-325.891L-117.901,-246.09C-117.901,-232.916 -107.221,-222.236 -94.047,-222.236L-14.246,-222.236C-6.378,-222.236 0,-215.858 0,-207.99" style="fill:rgb(217,217,217);fill-rule:nonzero;"/>
+                    </g>
+                    <g transform="matrix(1,0,0,1,411.0684,16.9009)">
+                        <path d="M0,101.992L-85.56,101.992C-92.549,101.992 -98.216,96.326 -98.216,89.336L-98.216,3.776C-98.216,1.26 -95.173,0 -93.394,1.779L1.997,97.17C3.777,98.95 2.516,101.992 0,101.992" style="fill:rgb(217,217,217);fill-rule:nonzero;"/>
+                    </g>
+                </g>
+            </g>
+        </g>
+    </g>
 </svg>

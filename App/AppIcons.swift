@@ -9,6 +9,11 @@ enum AppIcons {
     static func folder(size: CGFloat) -> NSImage? { named("Folder", size: size) }
     static func document(size: CGFloat) -> NSImage? { named("Document", size: size) }
     static func trash(size: CGFloat) -> NSImage? { named("Trash", size: size) }
+    static func view(size: CGFloat) -> NSImage? { named("View", size: size) }
+    static func docs(size: CGFloat) -> NSImage? { named("Docs", size: size) }
+    static func finder(size: CGFloat) -> NSImage? { named("Finder", size: size) }
+    static func addDocument(size: CGFloat) -> NSImage? { named("AddDocument", size: size) }
+    static func addFolder(size: CGFloat) -> NSImage? { named("AddFolder", size: size) }
 
     private static func named(_ name: String, size: CGFloat) -> NSImage? {
         let key = "\(name)-\(size)"

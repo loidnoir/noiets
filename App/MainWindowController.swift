@@ -480,22 +480,29 @@ final class MainWindowController: NSWindowController {
                 }
         }
 
-        let commands: [(String, String, @MainActor () -> Void)] = [
-            ("New Note", "square.and.pencil", { [weak self] in self?.newNote(nil) }),
-            ("New Folder", "folder.badge.plus", { [weak self] in self?.newFolder(nil) }),
-            ("Open Trash", "trash", { [weak self] in self?.sidebarVC.selectFixed(.trash) }),
-            ("Toggle Sidebar", "sidebar.left", { [weak self] in self?.toggleSidebarPane(nil) }),
-            ("Reveal in Finder", "finder", { [weak self] in self?.revealInFinder(nil) }),
-            ("Open Docs", "book", { [weak self] in self?.openDocs() }),
-            ("Save Note", "internaldrive", { [weak self] in self?.saveNote(nil) }),
+        // (title, SF fallback, custom icon, action)
+        let commands: [(String, String, NSImage?, @MainActor () -> Void)] = [
+            ("New Note", "square.and.pencil", AppIcons.addDocument(size: 14),
+             { [weak self] in self?.newNote(nil) }),
+            ("New Folder", "folder.badge.plus", AppIcons.addFolder(size: 14),
+             { [weak self] in self?.newFolder(nil) }),
+            ("Open Trash", "trash", AppIcons.trash(size: 14),
+             { [weak self] in self?.sidebarVC.selectFixed(.trash) }),
+            ("Toggle Sidebar", "sidebar.left", nil,
+             { [weak self] in self?.toggleSidebarPane(nil) }),
+            ("Reveal in Finder", "finder", AppIcons.finder(size: 14),
+             { [weak self] in self?.revealInFinder(nil) }),
+            ("Open Docs", "book", AppIcons.docs(size: 14),
+             { [weak self] in self?.openDocs() }),
+            ("Save Note", "internaldrive", nil,
+             { [weak self] in self?.saveNote(nil) }),
         ]
         return
             commands
             .filter { q.isEmpty || $0.0.lowercased().contains(q) }
             .map { cmd in
                 PalettePanel.Item(symbol: cmd.1, title: cmd.0, subtitle: nil,
-                                  image: cmd.1 == "trash" ? AppIcons.trash(size: 14) : nil,
-                                  action: cmd.2)
+                                  image: cmd.2, action: cmd.3)
             }
     }
 }

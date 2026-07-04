@@ -943,9 +943,15 @@ extension SidebarViewController: NSOutlineViewDelegate {
         case .separator:
             return SeparatorCellView.make(in: outlineView)
         case .fixed(let fixed):
+            let custom: NSImage?
+            switch fixed {
+            case .trash: custom = AppIcons.trash(size: 16)
+            case .views: custom = AppIcons.view(size: 16)
+            case .search: custom = nil
+            }
             return SidebarCellView.make(
                 in: outlineView, title: fixed.title, symbol: fixed.symbol, isFolder: false,
-                image: fixed == .trash ? AppIcons.trash(size: 16) : nil
+                image: custom
             )
         case .node(let node):
             if node.isFolder {
