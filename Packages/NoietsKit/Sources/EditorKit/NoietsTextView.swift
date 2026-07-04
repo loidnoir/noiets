@@ -215,21 +215,26 @@ extension NoietsTextView: VimTextTarget {
     /// their end WITHOUT overwriting the memory, so a later longer line
     /// restores the original position. The goal resets whenever the caret
     /// moves by any other means (h/l/w, clicks, typing, motions).
-    /// Forces real (non-estimated) layout for the logical line at `location`
-    /// plus one line either side — cheap, local, and required before trusting
-    /// character rects for caret movement.
-    private func ensureLocalLayout(around location: Int) {
+    /// Forces real (non-estimated) layout around the logical line at
+    /// `location` — `lineSpan` lines in the travel direction plus one line
+    /// the other way. Cheap and local; required before trusting character
+    /// rects for caret movement.
+    private func ensureLocalLayout(around location: Int, lineSpan: Int = 1,
+                                   forward: Bool = true) {
         guard let layoutManager = textLayoutManager,
               let contentStorage = textContentStorage else { return }
         let ns = string as NSString
         guard ns.length > 0 else { return }
         let line = ns.lineRange(for: NSRange(location: min(location, ns.length - 1), length: 0))
+
         var start = line.location
-        if start > 0 {
+        var end = line.location + line.length
+        let backSpan = forward ? 1 : lineSpan
+        let aheadSpan = forward ? lineSpan : 1
+        for _ in 0..<backSpan where start > 0 {
             start = ns.lineRange(for: NSRange(location: start - 1, length: 0)).location
         }
-        var end = line.location + line.length
-        if end < ns.length {
+        for _ in 0..<aheadSpan where end < ns.length {
             let next = ns.lineRange(for: NSRange(location: end, length: 0))
             end = next.location + next.length
         }
@@ -252,6 +257,14 @@ extension NoietsTextView: VimTextTarget {
 
         let goal = verticalGoalX ?? caretViewRect()?.minX
         verticalGoalX = goal
+
+        // Multi-line hops (⌃d/⌃u) travel through regions that may only have
+        // estimated layout on a freshly opened document — ensure the whole
+        // expected travel range up front, or the native moves stall.
+        if abs(lines) > 1 {
+            ensureLocalLayout(around: selectedRange().location, lineSpan: abs(lines) + 2,
+                              forward: lines > 0)
+        }
 
         for _ in 0..<abs(lines) {
             if lines > 0 {

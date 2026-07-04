@@ -321,6 +321,23 @@ enum SelfTest {
         result["bigXBelowRaw"] = below
         result["bigXRestoresBelow"] = below > wideLen + 2 && below <= wideLen + 2 + wideLen
 
+        // ⌃d / ⌃u half-page scroll on a LONG freshly-loaded document
+        // (regression: estimated layout stalled the multi-line move).
+        let longDoc = (1...200).map { "line number \($0) with some text" }
+            .joined(separator: "\n")
+        editorView.load(text: longDoc)
+        tv.setSelectedRange(NSRange(location: 0, length: 0))
+        key("d", control: true)
+        let afterHalfDown = tv.selectedRange().location
+        key("d", control: true)
+        let afterFullDown = tv.selectedRange().location
+        key("u", control: true)
+        let afterHalfUp = tv.selectedRange().location
+        result["ctrlDScrollTrace"] = [afterHalfDown, afterFullDown, afterHalfUp]
+        result["ctrlDMovesHalfPage"] = afterHalfDown > 100 // several lines down
+        result["ctrlDKeepsMoving"] = afterFullDown > afterHalfDown
+        result["ctrlUMovesBack"] = afterHalfUp < afterFullDown
+
         // j on a soft-wrapped line INSIDE a code block, straight after load
         // (regression: the caret refused to move down until an edit).
         editorView.load(text: "before\n```bash\nsudo /opt/parallelcluster/scripts/"
