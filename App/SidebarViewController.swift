@@ -278,18 +278,19 @@ final class SidebarViewController: NSViewController {
     private func buildContextMenu() -> NSMenu {
         let menu = NSMenu()
         menu.autoenablesItems = true
-        menu.addItem(item("New Note", #selector(ctxNewNote(_:))))
-        menu.addItem(item("New Folder", #selector(ctxNewFolder(_:))))
+        menu.addItem(item("New Note", #selector(ctxNewNote(_:)), icon: AppIcons.addDocument(size: 15)))
+        menu.addItem(item("New Folder", #selector(ctxNewFolder(_:)), icon: AppIcons.addFolder(size: 15)))
         menu.addItem(.separator())
-        menu.addItem(item("Reveal in Finder", #selector(ctxReveal(_:))))
+        menu.addItem(item("Reveal in Finder", #selector(ctxReveal(_:)), icon: AppIcons.finder(size: 15)))
         menu.addItem(.separator())
-        menu.addItem(item("Move to Trash", #selector(ctxTrash(_:))))
+        menu.addItem(item("Move to Trash", #selector(ctxTrash(_:)), icon: AppIcons.trash(size: 15)))
         return menu
     }
 
-    private func item(_ title: String, _ action: Selector) -> NSMenuItem {
+    private func item(_ title: String, _ action: Selector, icon: NSImage? = nil) -> NSMenuItem {
         let i = NSMenuItem(title: title, action: action, keyEquivalent: "")
         i.target = self
+        i.image = icon
         return i
     }
 
@@ -946,7 +947,7 @@ extension SidebarViewController: NSOutlineViewDelegate {
             let custom: NSImage?
             switch fixed {
             case .trash: custom = AppIcons.trash(size: 16)
-            case .views: custom = AppIcons.view(size: 16)
+            case .views: custom = AppIcons.view(size: 16, template: false)
             case .search: custom = nil
             }
             return SidebarCellView.make(
@@ -974,9 +975,10 @@ extension SidebarViewController: NSOutlineViewDelegate {
                 in: outlineView, title: node.title, symbol: nil, isFolder: false
             )
         case .view(let ref):
+            // Same folder size as the tree's SidebarFolderCellView rows.
             return SidebarCellView.make(
                 in: outlineView, title: ref.name, symbol: nil, isFolder: false,
-                image: AppIcons.folder(size: 15), prominent: false,
+                image: AppIcons.folder(size: 17), prominent: false,
                 tint: UITheme.modeNormalText
             )
         }

@@ -9,18 +9,21 @@ enum AppIcons {
     static func folder(size: CGFloat) -> NSImage? { named("Folder", size: size) }
     static func document(size: CGFloat) -> NSImage? { named("Document", size: size) }
     static func trash(size: CGFloat) -> NSImage? { named("Trash", size: size) }
-    static func view(size: CGFloat) -> NSImage? { named("View", size: size) }
+    /// `template: false` keeps the SVG's own colors instead of tinting.
+    static func view(size: CGFloat, template: Bool = true) -> NSImage? {
+        named("View", size: size, template: template)
+    }
     static func docs(size: CGFloat) -> NSImage? { named("Docs", size: size) }
     static func finder(size: CGFloat) -> NSImage? { named("Finder", size: size) }
     static func addDocument(size: CGFloat) -> NSImage? { named("AddDocument", size: size) }
     static func addFolder(size: CGFloat) -> NSImage? { named("AddFolder", size: size) }
 
-    private static func named(_ name: String, size: CGFloat) -> NSImage? {
-        let key = "\(name)-\(size)"
+    private static func named(_ name: String, size: CGFloat, template: Bool = true) -> NSImage? {
+        let key = "\(name)-\(size)-\(template)"
         if let cached = cache[key] { return cached }
         guard let url = Bundle.main.url(forResource: name, withExtension: "svg"),
               let image = NSImage(contentsOf: url) else { return nil }
-        image.isTemplate = true
+        image.isTemplate = template
         image.size = NSSize(width: size, height: size)
         cache[key] = image
         return image

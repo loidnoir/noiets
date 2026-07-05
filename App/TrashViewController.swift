@@ -304,7 +304,7 @@ extension TrashViewController: NSTableViewDataSource, NSTableViewDelegate {
         case .item(_, let isFolder, let title, let detail):
             return SearchHitCellView.make(
                 in: tableView, title: title, detail: detail,
-                image: isFolder ? AppIcons.folder(size: 15) : AppIcons.document(size: 15)
+                image: isFolder ? AppIcons.folder(size: 18) : AppIcons.document(size: 18)
             )
         }
     }

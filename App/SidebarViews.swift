@@ -405,7 +405,7 @@ final class SearchHitCellView: NSTableCellView {
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        icon.image = AppIcons.document(size: 15)
+        icon.image = AppIcons.document(size: 18)
         icon.contentTintColor = .secondaryLabelColor
         title.font = .systemFont(ofSize: 14, weight: .medium)
         title.lineBreakMode = .byTruncatingTail
@@ -419,8 +419,8 @@ final class SearchHitCellView: NSTableCellView {
         title.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         detail.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         NSLayoutConstraint.activate([
-            icon.widthAnchor.constraint(equalToConstant: 15),
-            icon.heightAnchor.constraint(equalToConstant: 15),
+            icon.widthAnchor.constraint(equalToConstant: 18),
+            icon.heightAnchor.constraint(equalToConstant: 18),
         ])
 
         let text = NSStackView(views: [title, detail])
@@ -451,7 +451,7 @@ final class SearchHitCellView: NSTableCellView {
         cell.identifier = reuseID
         cell.title.stringValue = title
         cell.detail.stringValue = detail.replacingOccurrences(of: "\n", with: " ")
-        cell.icon.image = image ?? AppIcons.document(size: 15)
+        cell.icon.image = image ?? AppIcons.document(size: 18)
         return cell
     }
 }
