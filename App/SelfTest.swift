@@ -854,6 +854,18 @@ enum SelfTest {
         let before = tv.selectedRange().location
         key("j")
         result["docsJMoves"] = tv.selectedRange().location != before
+
+        // / search and * word-search work on read-only documents.
+        tv.setSelectedRange(NSRange(location: 0, length: 0))
+        "/notes".forEach { key(String($0)) }
+        key("\r", keyCode: 36)
+        let searchLanded = tv.selectedRange().location
+        result["docsSlashSearchJumps"] = searchLanded > 0
+        key("n")
+        result["docsSearchNextAdvances"] = tv.selectedRange().location != searchLanded
+        let starStart = tv.selectedRange().location
+        key("*")
+        result["docsStarJumps"] = tv.selectedRange().location != starStart
         let textBefore = tv.string
         key("d"); key("d") // dd must not mutate a read-only document
         key("i")

@@ -364,9 +364,13 @@ final class MainWindowController: NSWindowController {
                 return
             }
         }
-        // Locked documents (docs page, ⌘L-locked notes) read, never write.
+        // Locked documents (docs page, ⌘L-locked notes) read, never write —
+        // but transient status (a /search prompt, the match counter, :N)
+        // still shows next to the LOCKED badge.
         if hostVC.current === editorVC || hostVC.current == nil, editorVC.isReadOnly {
-            sidebarVC.setVimStatus("LOCKED")
+            sidebarVC.setVimStatus(
+                vimStatusSuffix.isEmpty ? "LOCKED" : "LOCKED  \(vimStatusSuffix)"
+            )
             return
         }
         let current = mode ?? editorVC.editor.vim.mode
