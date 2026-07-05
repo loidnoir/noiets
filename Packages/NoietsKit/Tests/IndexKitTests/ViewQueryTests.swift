@@ -75,6 +75,27 @@ private func put(
         #expect(q.limit == 200)
     }
 
+    @Test func layoutTokenAndFilterRanges() {
+        #expect(ViewQuery.parse("layout:tag").layout == .tag)
+        #expect(ViewQuery.parse("layout:WEEK").layout == .week)
+        #expect(ViewQuery.parse("layout:bogus").layout == nil)
+
+        // Valid filters highlight; bare words and malformed tokens don't.
+        let text = "draft tag:work created:<abc layout:month sort:-title"
+        let ranges = ViewQuery.filterTokenRanges(text)
+        let ns = text as NSString
+        let tokens = ranges.map { ns.substring(with: $0) }
+        #expect(tokens == ["tag:work", "layout:month", "sort:-title"])
+    }
+
+    @Test func hitsCarryGroupingMetadata() throws {
+        let index = try makeIndex()
+        try put(index, "Work/Plan.md", "# Plan\n#alpha #beta text", mtime: 1234)
+        let hit = try index.notes(matching: ViewQuery.parse("")).first
+        #expect(hit?.mtime == 1234)
+        #expect(hit?.tags == ["alpha", "beta"])
+    }
+
     @Test func emptyQueryIsRecent() {
         let q = ViewQuery.parse("   ")
         #expect(q == ViewQuery())

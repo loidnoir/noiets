@@ -33,6 +33,19 @@ public final class NoteIndex: Sendable {
         public let relPath: String
         public let title: String
         public let snippet: String
+        /// Grouping metadata for view layouts (0 / empty outside view queries).
+        public let mtime: Double
+        public let tags: [String]
+
+        public init(id: Int64, relPath: String, title: String, snippet: String,
+                    mtime: Double = 0, tags: [String] = []) {
+            self.id = id
+            self.relPath = relPath
+            self.title = title
+            self.snippet = snippet
+            self.mtime = mtime
+            self.tags = tags
+        }
     }
 
     public struct Backlink: Sendable, Equatable {

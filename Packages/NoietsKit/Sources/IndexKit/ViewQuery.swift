@@ -17,6 +17,11 @@ public struct ViewQuery: Equatable, Sendable {
         case modified, created, title, words
     }
 
+    /// `layout:` sections the result list on top of the filters.
+    public enum Layout: String, Sendable {
+        case week, month, year, tag, folder
+    }
+
     public enum DateFilter: Equatable, Sendable {
         case before(Double) // column < epoch
         case after(Double)  // column > epoch
@@ -42,61 +47,95 @@ public struct ViewQuery: Equatable, Sendable {
     public var sort: SortKey = .modified
     public var ascending = false
     public var limit = 200
+    public var layout: Layout?
 
     public init() {}
 
     public static func parse(_ text: String, now: Date = Date()) -> ViewQuery {
         var query = ViewQuery()
-
         for token in text.split(whereSeparator: { $0.isWhitespace }) {
-            guard let colon = token.firstIndex(of: ":") else {
-                query.textTerms.append(String(token))
-                continue
-            }
-            let key = token[..<colon].lowercased()
-            let value = String(token[token.index(after: colon)...])
-            guard !key.isEmpty, !value.isEmpty else { continue }
-
-            switch key {
-            case "text":
-                query.textTerms.append(value)
-            case "title":
-                query.titleTerms.append(value.lowercased())
-            case "tag":
-                query.tags.append(value.lowercased())
-            case "folder":
-                var folder = value.lowercased()
-                while folder.hasSuffix("/") { folder.removeLast() }
-                if !folder.isEmpty { query.folders.append(folder) }
-            case "created":
-                if let filter = Self.dateFilter(value, now: now) {
-                    query.created.append(filter)
-                }
-            case "modified":
-                if let filter = Self.dateFilter(value, now: now) {
-                    query.modified.append(filter)
-                }
-            case "sort":
-                var name = value.lowercased()
-                var ascending = false
-                if name.hasPrefix("-") {
-                    ascending = true
-                    name.removeFirst()
-                }
-                if let sort = SortKey(rawValue: name) {
-                    query.sort = sort
-                    query.ascending = ascending
-                }
-            case "limit":
-                if let n = Int(value) {
-                    query.limit = min(max(n, 1), 1000)
-                }
-            default:
-                query.props.append(PropFilter(key: String(key),
-                                              value: value == "*" ? nil : value.lowercased()))
-            }
+            _ = consume(token: token, into: &query, now: now)
         }
         return query
+    }
+
+    /// UTF-16 ranges of tokens that parse as VALID filters — the editor
+    /// highlights them so malformed tokens visibly stay plain.
+    public static func filterTokenRanges(_ text: String, now: Date = Date()) -> [NSRange] {
+        let ns = text as NSString
+        guard ns.length > 0,
+              let regex = try? NSRegularExpression(pattern: "\\S+") else { return [] }
+        var query = ViewQuery()
+        var ranges: [NSRange] = []
+        for match in regex.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+            let token = ns.substring(with: match.range)
+            if consume(token: token[...], into: &query, now: now) {
+                ranges.append(match.range)
+            }
+        }
+        return ranges
+    }
+
+    /// Applies one token to the query. Returns true when the token was
+    /// recognized as a filter (bare FTS words and malformed tokens are not).
+    private static func consume(token: Substring, into query: inout ViewQuery,
+                                now: Date) -> Bool {
+        guard let colon = token.firstIndex(of: ":") else {
+            query.textTerms.append(String(token))
+            return false
+        }
+        let key = token[..<colon].lowercased()
+        let value = String(token[token.index(after: colon)...])
+        guard !key.isEmpty, !value.isEmpty else { return false }
+
+        switch key {
+        case "text":
+            query.textTerms.append(value)
+            return true
+        case "title":
+            query.titleTerms.append(value.lowercased())
+            return true
+        case "tag":
+            query.tags.append(value.lowercased())
+            return true
+        case "folder":
+            var folder = value.lowercased()
+            while folder.hasSuffix("/") { folder.removeLast() }
+            guard !folder.isEmpty else { return false }
+            query.folders.append(folder)
+            return true
+        case "created":
+            guard let filter = Self.dateFilter(value, now: now) else { return false }
+            query.created.append(filter)
+            return true
+        case "modified":
+            guard let filter = Self.dateFilter(value, now: now) else { return false }
+            query.modified.append(filter)
+            return true
+        case "sort":
+            var name = value.lowercased()
+            var ascending = false
+            if name.hasPrefix("-") {
+                ascending = true
+                name.removeFirst()
+            }
+            guard let sort = SortKey(rawValue: name) else { return false }
+            query.sort = sort
+            query.ascending = ascending
+            return true
+        case "limit":
+            guard let n = Int(value) else { return false }
+            query.limit = min(max(n, 1), 1000)
+            return true
+        case "layout":
+            guard let layout = Layout(rawValue: value.lowercased()) else { return false }
+            query.layout = layout
+            return true
+        default:
+            query.props.append(PropFilter(key: String(key),
+                                          value: value == "*" ? nil : value.lowercased()))
+            return true
+        }
     }
 
     /// `<7d` newer-than-7-days → after(now-7d); `>7d` older → before(now-7d);
@@ -196,8 +235,10 @@ extension NoteIndex {
         let direction = query.ascending ? "ASC" : "DESC"
 
         let sql = """
-        SELECT n.id, n.relPath, n.title,
-               \(hasText ? "snippet(note_fts, 1, '', '', ' … ', 12)" : "''") AS snippet
+        SELECT n.id, n.relPath, n.title, n.mtime,
+               \(hasText ? "snippet(note_fts, 1, '', '', ' … ', 12)" : "''") AS snippet,
+               (SELECT group_concat(t.name, ',') FROM note_tag nt
+                JOIN tag t ON t.id = nt.tagId WHERE nt.noteId = n.id) AS tagList
         FROM note n
         \(hasText ? "JOIN note_fts ON note_fts.rowid = n.id" : "")
         WHERE \(clauses.isEmpty ? "1=1" : clauses.joined(separator: " AND "))
@@ -212,7 +253,10 @@ extension NoteIndex {
                                             arguments: StatementArguments(arguments))
                 return rows.map {
                     SearchHit(id: $0["id"], relPath: $0["relPath"], title: $0["title"],
-                              snippet: $0["snippet"] ?? "")
+                              snippet: $0["snippet"] ?? "",
+                              mtime: $0["mtime"] ?? 0,
+                              tags: (($0["tagList"] as String?) ?? "")
+                                  .split(separator: ",").map(String.init).sorted())
                 }
             }
         } catch {

@@ -96,7 +96,11 @@ tag:project folder:Work draft status:done modified:<7d sort:-title limit:50
 | `modified:<7d` / `created:>2026-01-01` | date windows (`<` newer, `>` older) |
 | `status:done` | frontmatter property equals; `status:*` = has it |
 | `sort:modified·created·title·words` | order (`-` prefix = ascending) |
+| `layout:week·month·year·tag·folder` | section the list by time, tag, or folder |
 | `limit:N` | cap results |
+
+Valid filter tokens highlight as chips while you type — a plain token means it didn't
+parse. `layout:` draws accent-colored section headers over the grouped results.
 
 When the query differs from what's saved, a **Save** button appears (`⌘⏎`). Saved views
 are rows in the sidebar — `Enter` opens, `r` renames, `dd` deletes (notes are untouched).
