@@ -2,16 +2,34 @@ import AppKit
 import EditorKit
 import VaultStore
 
-/// Lists the vault's `.trash` folder with restore / delete-permanently.
+/// Lists the vault's `.trash` folder with restore / delete-permanently,
+/// grouped into month sections by deletion date.
 @MainActor
 final class TrashViewController: NSViewController {
+    private enum Row {
+        case header(String)
+        case item(URL, isFolder: Bool, title: String, detail: String)
+
+        var url: URL? {
+            if case .item(let url, _, _, _) = self { return url }
+            return nil
+        }
+    }
+
     private let session: VaultSession
     private let tableView = VimTableView()
     private let headerLabel = NSTextField(labelWithString: "Trash")
     private let emptyLabel = NSTextField(labelWithString: "Trash is empty")
-    private var items: [URL] = []
+    private var rows: [Row] = []
     private var pendingKey: Character?
     private var listCount = 0
+
+    private func isItemRow(_ row: Int) -> Bool {
+        row >= 0 && row < rows.count && rows[row].url != nil
+    }
+
+    private var firstItemRow: Int? { rows.indices.first(where: isItemRow) }
+    private var lastItemRow: Int? { rows.indices.last(where: isItemRow) }
 
     /// Esc / ⌃h → back to the sidebar tree.
     var onFocusSidebar: (() -> Void)?
@@ -42,9 +60,10 @@ final class TrashViewController: NSViewController {
         tableView.addTableColumn(column)
         tableView.headerView = nil
         tableView.style = .fullWidth
-        tableView.rowHeight = 30
+        tableView.rowHeight = 46
         tableView.backgroundColor = .clear
         tableView.focusRingType = .none
+        tableView.intercellSpacing = .zero
         tableView.dataSource = self
         tableView.delegate = self
         tableView.menu = buildMenu()
@@ -76,22 +95,49 @@ final class TrashViewController: NSViewController {
 
     func reload() {
         _ = view
-        let previous = tableView.selectedRow >= 0 && tableView.selectedRow < items.count
-            ? items[tableView.selectedRow] : nil
+        let previous = tableView.selectedRow >= 0 && tableView.selectedRow < rows.count
+            ? rows[tableView.selectedRow].url : nil
         let fm = FileManager.default
-        items = (try? fm.contentsOfDirectory(
+        let keys: Set<URLResourceKey> =
+            [.isDirectoryKey, .addedToDirectoryDateKey, .contentModificationDateKey]
+        // No .skipsHiddenFiles: everything inside the dot-prefixed .trash
+        // inherits the hidden flag (iCloud Drive), which would hide it all.
+        // Dot-named entries are filtered out by name instead.
+        let items = ((try? fm.contentsOfDirectory(
             at: session.vault.trashURL,
-            includingPropertiesForKeys: [.contentModificationDateKey],
-            options: [.skipsHiddenFiles] // keeps the .origins.json sidecar out
-        ).sorted {
-            let a = (try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
-            let b = (try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
-            return a > b
-        }) ?? []
+            includingPropertiesForKeys: Array(keys)
+        )) ?? [])
+            .filter { !$0.lastPathComponent.hasPrefix(".") }
+            .map { url -> (url: URL, deleted: Date, isFolder: Bool) in
+                let values = try? url.resourceValues(forKeys: keys)
+                // mtime survives the move into .trash; the added-to-directory
+                // date is the actual deletion time (also for items trashed by
+                // other apps sharing the vault).
+                let deleted = values?.addedToDirectoryDate
+                    ?? values?.contentModificationDate ?? .distantPast
+                return (url, deleted, values?.isDirectory ?? false)
+            }
+            .sorted { $0.deleted > $1.deleted }
+
+        rows = []
+        var currentMonth: String?
+        for item in items {
+            let month = DateSectionTitle.month(for: item.deleted)
+            if month != currentMonth {
+                rows.append(.header(month))
+                currentMonth = month
+            }
+            let name = item.url.lastPathComponent
+            let title = item.isFolder ? name : item.url.deletingPathExtension().lastPathComponent
+            // Detail = where the item goes back to on restore.
+            let origin = ((try? session.index?.trashOrigin(name: name)) ?? nil) ?? ""
+            let detail = origin.isEmpty ? name : "\(origin)/\(name)"
+            rows.append(.item(item.url, isFolder: item.isFolder, title: title, detail: detail))
+        }
         emptyLabel.isHidden = !items.isEmpty
         tableView.reloadData()
         // Keep the cursor on the same item across live refreshes.
-        if let previous, let row = items.firstIndex(of: previous) {
+        if let previous, let row = rows.firstIndex(where: { $0.url == previous }) {
             tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
         }
     }
@@ -117,18 +163,16 @@ final class TrashViewController: NSViewController {
     }
 
     private func restore(row: Int) {
-        guard row >= 0, row < items.count else { return }
+        guard isItemRow(row), let url = rows[row].url else { return }
         // Back to the folder it was deleted from, when it still exists;
         // otherwise the vault root.
-        try? NoteIO.restoreFromTrash(items[row], vault: session.vault)
-        session.rescan()
+        session.restoreFromTrash(url)
         reload()
-        selectRow(min(row, items.count - 1))
+        selectRow(min(row, rows.count - 1))
     }
 
     private func confirmDelete(row: Int) {
-        guard row >= 0, row < items.count, let window = view.window else { return }
-        let url = items[row]
+        guard isItemRow(row), let url = rows[row].url, let window = view.window else { return }
         let alert = NSAlert()
         alert.messageText = "Delete “\(url.lastPathComponent)” permanently?"
         alert.informativeText = "This cannot be undone."
@@ -137,10 +181,9 @@ final class TrashViewController: NSViewController {
         alert.beginSheetModal(for: window) { [weak self] response in
             guard let self else { return }
             if response == .alertFirstButtonReturn {
-                try? FileManager.default.removeItem(at: url)
-                TrashOrigins.forget(name: url.lastPathComponent, vault: self.session.vault)
+                self.session.deleteFromTrashPermanently(url)
                 self.reload()
-                self.selectRow(min(row, self.items.count - 1))
+                self.selectRow(min(row, self.rows.count - 1))
             }
             self.focusList()
         }
@@ -151,16 +194,46 @@ final class TrashViewController: NSViewController {
     func focusList() {
         _ = view
         view.window?.makeFirstResponder(tableView)
-        if tableView.selectedRow < 0, !items.isEmpty {
-            selectRow(0)
+        if tableView.selectedRow < 0, let first = firstItemRow {
+            selectRow(first)
         }
     }
 
     private func selectRow(_ row: Int) {
-        guard !items.isEmpty else { return }
-        let clamped = min(max(row, 0), items.count - 1)
+        guard let first = firstItemRow, let last = lastItemRow else { return }
+        var clamped = min(max(row, first), last)
+        // Section headers are not selectable: continue in the direction of
+        // travel, falling back the other way at the edges.
+        if !isItemRow(clamped) {
+            let forward = row >= tableView.selectedRow
+            var probe = clamped
+            while probe >= first, probe <= last, !isItemRow(probe) {
+                probe += forward ? 1 : -1
+            }
+            clamped = isItemRow(probe) ? probe : (forward ? last : first)
+        }
         tableView.selectRowIndexes(IndexSet(integer: clamped), byExtendingSelection: false)
         tableView.scrollRowToVisible(clamped)
+    }
+
+    /// Moves the selection by `steps` item rows (headers don't count).
+    private func moveSelection(by steps: Int) {
+        guard steps != 0, firstItemRow != nil else { return }
+        var row = tableView.selectedRow
+        var remaining = abs(steps)
+        let direction = steps > 0 ? 1 : -1
+        var landed = row
+        while remaining > 0 {
+            var probe = row + direction
+            while probe >= 0, probe < rows.count, !isItemRow(probe) {
+                probe += direction
+            }
+            guard probe >= 0, probe < rows.count else { break }
+            landed = probe
+            row = probe
+            remaining -= 1
+        }
+        selectRow(landed)
     }
 
     private func handleListKey(_ event: NSEvent) -> Bool {
@@ -206,9 +279,9 @@ final class TrashViewController: NSViewController {
         }
 
         switch ch {
-        case "j": selectRow(tableView.selectedRow + count)
-        case "k": selectRow(tableView.selectedRow - count)
-        case "G": selectRow(hadCount ? count - 1 : items.count - 1)
+        case "j": moveSelection(by: count)
+        case "k": moveSelection(by: -count)
+        case "G": selectRow(hadCount ? count - 1 : rows.count - 1)
         case "g", "d": pendingKey = ch
         case "r": restore(row: tableView.selectedRow)
         default: return false
@@ -218,20 +291,30 @@ final class TrashViewController: NSViewController {
 }
 
 extension TrashViewController: NSTableViewDataSource, NSTableViewDelegate {
-    func numberOfRows(in tableView: NSTableView) -> Int { items.count }
+    func numberOfRows(in tableView: NSTableView) -> Int { rows.count }
 
     func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
         SoftRowView()
     }
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-        let url = items[row]
-        let isFolder = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
-        return SidebarCellView.make(
-            in: tableView,
-            title: url.lastPathComponent, symbol: nil, isFolder: isFolder,
-            image: isFolder ? AppIcons.folder(size: 15) : AppIcons.document(size: 15),
-            prominent: false
-        )
+        switch rows[row] {
+        case .header(let title):
+            return SectionHeaderCellView.make(in: tableView, title: title)
+        case .item(_, let isFolder, let title, let detail):
+            return SearchHitCellView.make(
+                in: tableView, title: title, detail: detail,
+                image: isFolder ? AppIcons.folder(size: 15) : AppIcons.document(size: 15)
+            )
+        }
+    }
+
+    func tableView(_ tableView: NSTableView, shouldSelectRow row: Int) -> Bool {
+        isItemRow(row)
+    }
+
+    func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
+        if case .header = rows[row] { return 44 }
+        return 46
     }
 }

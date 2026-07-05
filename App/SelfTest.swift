@@ -33,22 +33,28 @@ enum SelfTest {
         let fm = FileManager.default
         let vault = session.vault
         let sub = vault.rootURL.appendingPathComponent("RestoreProbe", isDirectory: true)
+        result["indexAvailable"] = session.index != nil
         do {
             try fm.createDirectory(at: sub, withIntermediateDirectories: true)
             let a = try NoteIO.createNote(in: sub, baseName: "RestoreA")
             let b = try NoteIO.createNote(in: sub, baseName: "RestoreB")
-            let trashedA = try NoteIO.moveToTrash(a, vault: vault)
-            let trashedB = try NoteIO.moveToTrash(b, vault: vault)
+            // Session-level trash/restore so the SQLite origin map is exercised.
+            guard let trashedA = session.trashNote(a),
+                  let trashedB = session.trashNote(b) else {
+                result["error"] = "FAIL: trashNote returned nil"
+                try? fm.removeItem(at: sub)
+                return result
+            }
 
-            let backA = try NoteIO.restoreFromTrash(trashedA, vault: vault)
-            result["toOrigin"] = backA.deletingLastPathComponent().standardizedFileURL
-                == sub.standardizedFileURL ? "PASS" : "FAIL: \(backA.path)"
+            let backA = session.restoreFromTrash(trashedA)
+            result["toOrigin"] = backA?.deletingLastPathComponent().standardizedFileURL
+                == sub.standardizedFileURL ? "PASS" : "FAIL: \(backA?.path ?? "nil")"
 
             try fm.removeItem(at: sub) // origin gone → root fallback
-            let backB = try NoteIO.restoreFromTrash(trashedB, vault: vault)
-            result["missingDirToRoot"] = backB.deletingLastPathComponent().standardizedFileURL
-                == vault.rootURL.standardizedFileURL ? "PASS" : "FAIL: \(backB.path)"
-            try? fm.removeItem(at: backB)
+            let backB = session.restoreFromTrash(trashedB)
+            result["missingDirToRoot"] = backB?.deletingLastPathComponent().standardizedFileURL
+                == vault.rootURL.standardizedFileURL ? "PASS" : "FAIL: \(backB?.path ?? "nil")"
+            if let backB { try? fm.removeItem(at: backB) }
         } catch {
             result["error"] = "FAIL: \(error)"
         }
@@ -623,7 +629,8 @@ enum SelfTest {
                         wc2.session.trashNote(victim)
                     }
                 }
-                result["trashViewLiveRefresh"] = list.numberOfRows == rowsBefore + 1
+                // Month grouping can add a header row along with the item.
+                result["trashViewLiveRefresh"] = list.numberOfRows > rowsBefore
             }
         }
 

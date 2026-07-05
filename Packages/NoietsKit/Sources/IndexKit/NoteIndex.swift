@@ -147,6 +147,15 @@ public final class NoteIndex: Sendable {
                 t.column("relPath", .text).primaryKey()
             }
         }
+        migrator.registerMigration("v4") { db in
+            // Where each trashed item came from (vault-relative folder;
+            // "" = root), keyed by its name inside .trash. USER DATA, not
+            // cache — migrations must never wipe it.
+            try db.create(table: "trash_origin") { t in
+                t.column("name", .text).primaryKey()
+                t.column("originFolder", .text).notNull()
+            }
+        }
         return migrator
     }
 
@@ -177,6 +186,52 @@ public final class NoteIndex: Sendable {
                                arguments: [relPath])
             }
         }
+    }
+
+    // MARK: - Trash origins
+
+    /// Vault-relative folder the trashed item `name` was deleted from
+    /// ("" = root), if known.
+    public func trashOrigin(name: String) throws -> String? {
+        try pool.read { db in
+            try String.fetchOne(
+                db, sql: "SELECT originFolder FROM trash_origin WHERE name = ?",
+                arguments: [name]
+            )
+        }
+    }
+
+    public func setTrashOrigin(name: String, originFolder: String) throws {
+        try pool.write { db in
+            try db.execute(
+                sql: "INSERT OR REPLACE INTO trash_origin(name, originFolder) VALUES(?, ?)",
+                arguments: [name, originFolder]
+            )
+        }
+    }
+
+    public func forgetTrashOrigin(name: String) throws {
+        try pool.write { db in
+            try db.execute(sql: "DELETE FROM trash_origin WHERE name = ?", arguments: [name])
+        }
+    }
+
+    /// One-time migration of the legacy `.trash/.origins.json` sidecar into
+    /// the trash_origin table; deletes the sidecar afterwards. Existing rows
+    /// win (OR IGNORE), so an interrupted run just re-imports harmlessly.
+    public func importLegacyTrashOrigins(from sidecar: URL) throws {
+        guard let data = try? Data(contentsOf: sidecar),
+              let map = try? JSONDecoder().decode([String: String].self, from: data)
+        else { return }
+        try pool.write { db in
+            for (name, origin) in map {
+                try db.execute(
+                    sql: "INSERT OR IGNORE INTO trash_origin(name, originFolder) VALUES(?, ?)",
+                    arguments: [name, origin]
+                )
+            }
+        }
+        try? FileManager.default.removeItem(at: sidecar)
     }
 
     // MARK: - Writes (called from the Reindexer)

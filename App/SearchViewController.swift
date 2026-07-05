@@ -304,13 +304,11 @@ final class SearchViewController: NSViewController {
             formatter.dateFormat = "yyyy"
             return [formatter.string(from: date)]
         case .month:
-            formatter.dateFormat = "MMMM yyyy"
-            return [formatter.string(from: date)]
+            return [DateSectionTitle.month(for: date)]
         case .week:
             let calendar = Calendar.current
             guard let week = calendar.dateInterval(of: .weekOfYear, for: date) else {
-                formatter.dateFormat = "MMMM yyyy"
-                return [formatter.string(from: date)]
+                return [DateSectionTitle.month(for: date)]
             }
             let last = week.end.addingTimeInterval(-1)
             formatter.dateFormat = "d MMM"
@@ -528,101 +526,3 @@ extension SearchViewController: NSTableViewDataSource, NSTableViewDelegate {
     }
 }
 
-/// `layout:` section header: primary-accent title over a hairline.
-private final class SectionHeaderCellView: NSTableCellView {
-    static let reuseID = NSUserInterfaceItemIdentifier("SectionHeaderCell")
-
-    private let title = NSTextField(labelWithString: "")
-    private let line = ColorView(color: UITheme.hairline)
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        title.font = .systemFont(ofSize: 14, weight: .semibold)
-        title.textColor = UITheme.modeNormalText
-        title.lineBreakMode = .byTruncatingTail
-        title.maximumNumberOfLines = 1
-        title.translatesAutoresizingMaskIntoConstraints = false
-        line.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(title)
-        addSubview(line)
-        NSLayoutConstraint.activate([
-            title.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 28),
-            title.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -20),
-            title.bottomAnchor.constraint(equalTo: line.topAnchor, constant: -6),
-            line.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 28),
-            line.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -20),
-            line.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -4),
-            line.heightAnchor.constraint(equalToConstant: 1),
-        ])
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
-
-    static func make(in tableView: NSTableView, title: String) -> SectionHeaderCellView {
-        let cell = tableView.makeView(withIdentifier: reuseID, owner: nil) as? SectionHeaderCellView
-            ?? SectionHeaderCellView(frame: .zero)
-        cell.identifier = reuseID
-        cell.title.stringValue = title
-        return cell
-    }
-}
-
-/// Two-line row: type icon + note title + muted snippet/path.
-private final class SearchHitCellView: NSTableCellView {
-    static let reuseID = NSUserInterfaceItemIdentifier("SearchHitCell")
-
-    private let icon = NSImageView()
-    private let title = NSTextField(labelWithString: "")
-    private let detail = NSTextField(labelWithString: "")
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        icon.image = AppIcons.document(size: 15)
-        icon.contentTintColor = .secondaryLabelColor
-        title.font = .systemFont(ofSize: 14, weight: .medium)
-        title.lineBreakMode = .byTruncatingTail
-        detail.font = .systemFont(ofSize: 12)
-        detail.textColor = .secondaryLabelColor
-        detail.lineBreakMode = .byTruncatingTail
-        // Long titles must truncate on one line — never wrap, never crush
-        // the icon out of the row.
-        title.maximumNumberOfLines = 1
-        detail.maximumNumberOfLines = 1
-        title.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        detail.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        NSLayoutConstraint.activate([
-            icon.widthAnchor.constraint(equalToConstant: 15),
-            icon.heightAnchor.constraint(equalToConstant: 15),
-        ])
-
-        let text = NSStackView(views: [title, detail])
-        text.orientation = .vertical
-        text.alignment = .leading
-        text.spacing = 2
-
-        let stack = NSStackView(views: [icon, text])
-        stack.orientation = .horizontal
-        stack.alignment = .centerY
-        stack.spacing = 9
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(stack)
-        NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 28),
-            stack.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -20),
-            stack.centerYAnchor.constraint(equalTo: centerYAnchor),
-        ])
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
-
-    static func make(in tableView: NSTableView, title: String, detail: String) -> SearchHitCellView {
-        let cell = tableView.makeView(withIdentifier: reuseID, owner: nil) as? SearchHitCellView
-            ?? SearchHitCellView(frame: .zero)
-        cell.identifier = reuseID
-        cell.title.stringValue = title
-        cell.detail.stringValue = detail.replacingOccurrences(of: "\n", with: " ")
-        return cell
-    }
-}

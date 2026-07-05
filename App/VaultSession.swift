@@ -89,6 +89,8 @@ final class VaultSession {
         do {
             let index = try NoteIndex(vault: vault)
             self.index = index
+            try? index.importLegacyTrashOrigins(
+                from: vault.trashURL.appendingPathComponent(".origins.json"))
             let reindexer = Reindexer(index: index) { [weak self] in
                 self?.onIndexChanged?()
             }
@@ -338,7 +340,8 @@ final class VaultSession {
         return result
     }
 
-    func trashNote(_ url: URL) {
+    @discardableResult
+    func trashNote(_ url: URL) -> URL? {
         let removesCurrent = currentNoteURL == url
             || currentNoteURL?.path.hasPrefix(url.path + "/") == true
         if removesCurrent {
@@ -347,12 +350,40 @@ final class VaultSession {
             pendingText = nil
             currentNoteURL = nil
         }
+        let origin = vault.relativePath(of: url.deletingLastPathComponent())
+        var dest: URL?
         do {
-            try NoteIO.moveToTrash(url, vault: vault)
+            dest = try NoteIO.moveToTrash(url, vault: vault)
+            if let dest {
+                try? index?.setTrashOrigin(name: dest.lastPathComponent, originFolder: origin)
+            }
         } catch {
             Self.log.error("Trash failed: \(error.localizedDescription)")
         }
         rescan()
+        return dest
+    }
+
+    /// Moves a trashed item back to the folder it was deleted from (recorded
+    /// in the index) when that folder still exists, else the vault root.
+    @discardableResult
+    func restoreFromTrash(_ url: URL) -> URL? {
+        let name = url.lastPathComponent
+        let origin = (try? index?.trashOrigin(name: name)) ?? nil
+        do {
+            let dest = try NoteIO.restoreFromTrash(url, vault: vault, originFolder: origin)
+            try? index?.forgetTrashOrigin(name: name)
+            rescan()
+            return dest
+        } catch {
+            Self.log.error("Restore failed: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    func deleteFromTrashPermanently(_ url: URL) {
+        try? FileManager.default.removeItem(at: url)
+        try? index?.forgetTrashOrigin(name: url.lastPathComponent)
     }
 
     // MARK: First-run content

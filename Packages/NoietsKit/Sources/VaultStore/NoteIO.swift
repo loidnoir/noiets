@@ -43,22 +43,16 @@ public enum NoteIO {
             counter += 1
         }
         try fm.moveItem(at: url, to: dest)
-        TrashOrigins.record(
-            name: dest.lastPathComponent,
-            originFolder: vault.relativePath(of: url.deletingLastPathComponent()),
-            vault: vault
-        )
         return dest
     }
 
-    /// Moves a trashed item back to the folder it was deleted from when that
+    /// Moves a trashed item back to `originFolder` (vault-relative) when that
     /// folder still exists, else the vault root. Returns the restored URL.
     @discardableResult
-    public static func restoreFromTrash(_ url: URL, vault: Vault) throws -> URL {
+    public static func restoreFromTrash(_ url: URL, vault: Vault, originFolder: String?) throws -> URL {
         let fm = FileManager.default
         var targetDir = vault.rootURL
-        if let rel = TrashOrigins.origin(name: url.lastPathComponent, vault: vault),
-           !rel.isEmpty {
+        if let rel = originFolder, !rel.isEmpty {
             let candidate = vault.rootURL.appendingPathComponent(rel, isDirectory: true)
             var isDir: ObjCBool = false
             if fm.fileExists(atPath: candidate.path, isDirectory: &isDir), isDir.boolValue {
@@ -75,7 +69,6 @@ public enum NoteIO {
             counter += 1
         }
         try fm.moveItem(at: url, to: dest)
-        TrashOrigins.forget(name: url.lastPathComponent, vault: vault)
         return dest
     }
 
