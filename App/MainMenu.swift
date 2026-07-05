@@ -36,8 +36,8 @@ enum MainMenu {
 
         // File
         let file = NSMenu(title: "File")
-        file.addItem(withTitle: "New Note", action: Selector(("newNote:")), keyEquivalent: "n")
-        file.addItem({ let i = NSMenuItem(title: "New Folder", action: Selector(("newFolder:")), keyEquivalent: "n")
+        file.addItem(withTitle: "Add Note", action: Selector(("newNote:")), keyEquivalent: "n")
+        file.addItem({ let i = NSMenuItem(title: "Add Folder", action: Selector(("newFolder:")), keyEquivalent: "n")
                        i.keyEquivalentModifierMask = [.command, .shift]; return i }())
         file.addItem(.separator())
         file.addItem(withTitle: "Save", action: Selector(("saveNote:")), keyEquivalent: "")

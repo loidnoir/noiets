@@ -31,6 +31,8 @@ enum UITheme {
         light: rgb(0x8D53D4),
         dark: rgb(0x8D53D4)
     )
+    /// Primary information color used for informational actions.
+    static let informationColor = modeNormalText
     /// Hairline separating panes and the bottom mode bar — a touch darker
     /// than the sidebar background in both appearances.
     static let paneSeparator = dynamic(

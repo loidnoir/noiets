@@ -75,7 +75,7 @@ final class PalettePanel: NSPanel {
         tableView.addTableColumn(column)
         tableView.headerView = nil
         tableView.style = .fullWidth
-        tableView.rowHeight = 36
+        tableView.rowHeight = 42
         tableView.backgroundColor = .clear
         tableView.focusRingType = .none
         tableView.intercellSpacing = NSSize(width: 0, height: 0)
@@ -239,9 +239,13 @@ private final class PaletteCellView: NSTableCellView {
         super.init(frame: frameRect)
         icon.contentTintColor = .secondaryLabelColor
         icon.setContentHuggingPriority(.required, for: .horizontal)
-        title.font = .systemFont(ofSize: 14)
+        NSLayoutConstraint.activate([
+            icon.widthAnchor.constraint(equalToConstant: 18),
+            icon.heightAnchor.constraint(equalToConstant: 18),
+        ])
+        title.font = .systemFont(ofSize: 15)
         title.lineBreakMode = .byTruncatingTail
-        subtitle.font = .systemFont(ofSize: 12)
+        subtitle.font = .systemFont(ofSize: 13)
         subtitle.textColor = .tertiaryLabelColor
         subtitle.lineBreakMode = .byTruncatingHead
 
@@ -271,7 +275,7 @@ private final class PaletteCellView: NSTableCellView {
             cell.icon.isHidden = false
         } else if let symbol = item.symbol {
             cell.icon.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
-                .withSymbolConfiguration(.init(pointSize: 13, weight: .regular))
+                .withSymbolConfiguration(.init(pointSize: 16, weight: .regular))
             cell.icon.isHidden = false
         } else {
             cell.icon.isHidden = true

@@ -278,8 +278,8 @@ final class SidebarViewController: NSViewController {
     private func buildContextMenu() -> NSMenu {
         let menu = NSMenu()
         menu.autoenablesItems = true
-        menu.addItem(item("New Note", #selector(ctxNewNote(_:)), icon: AppIcons.addDocument(size: 15)))
-        menu.addItem(item("New Folder", #selector(ctxNewFolder(_:)), icon: AppIcons.addFolder(size: 15)))
+        menu.addItem(item("Add Note", #selector(ctxNewNote(_:)), icon: AppIcons.addDocument(size: 15)))
+        menu.addItem(item("Add Folder", #selector(ctxNewFolder(_:)), icon: AppIcons.addFolder(size: 15)))
         menu.addItem(.separator())
         menu.addItem(item("Reveal in Finder", #selector(ctxReveal(_:)), icon: AppIcons.finder(size: 15)))
         menu.addItem(.separator())

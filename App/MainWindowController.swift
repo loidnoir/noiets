@@ -447,7 +447,7 @@ final class MainWindowController: NSWindowController {
             let rows = (try? index.quickOpen(query)) ?? []
             return rows.map { row in
                 PalettePanel.Item(symbol: nil, title: row.title, subtitle: row.relPath,
-                                  image: AppIcons.document(size: 14)) {
+                                  image: AppIcons.document(size: 18)) {
                     let url = self.session.url(forRelPath: row.relPath)
                     self.open(noteAt: url)
                     self.sidebarVC.select(url: url, notify: false)
@@ -486,19 +486,19 @@ final class MainWindowController: NSWindowController {
 
         // (title, SF fallback, custom icon, action)
         let commands: [(String, String, NSImage?, @MainActor () -> Void)] = [
-            ("New Note", "square.and.pencil", AppIcons.addDocument(size: 14),
+            ("Add Note", "square.and.pencil", AppIcons.addDocument(size: 18),
              { [weak self] in self?.newNote(nil) }),
-            ("New Folder", "folder.badge.plus", AppIcons.addFolder(size: 14),
+            ("Add Folder", "folder.badge.plus", AppIcons.addFolder(size: 18),
              { [weak self] in self?.newFolder(nil) }),
-            ("Open Trash", "trash", AppIcons.trash(size: 14),
+            ("Open Trash", "trash", AppIcons.trash(size: 18),
              { [weak self] in self?.sidebarVC.selectFixed(.trash) }),
-            ("Toggle Sidebar", "sidebar.left", nil,
+            ("Toggle Sidebar", "sidebar.left", AppIcons.sidebar(size: 18),
              { [weak self] in self?.toggleSidebarPane(nil) }),
-            ("Reveal in Finder", "finder", AppIcons.finder(size: 14),
+            ("Reveal in Finder", "finder", AppIcons.finder(size: 18),
              { [weak self] in self?.revealInFinder(nil) }),
-            ("Open Docs", "book", AppIcons.docs(size: 14),
+            ("Open Docs", "book", AppIcons.docs(size: 18),
              { [weak self] in self?.openDocs() }),
-            ("Save Note", "internaldrive", nil,
+            ("Save Note", "internaldrive", AppIcons.save(size: 18),
              { [weak self] in self?.saveNote(nil) }),
         ]
         return
