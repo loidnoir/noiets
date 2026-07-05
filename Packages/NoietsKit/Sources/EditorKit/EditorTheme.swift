@@ -17,12 +17,13 @@ public struct EditorTheme {
     public var highlightBackground: NSColor
     public var background: NSColor
 
-    // Code-block syntax palette (muted, Things-calm).
+    // Code-block syntax palette — Sonokai in dark mode, muted in light.
     public var codeKeyword: NSColor
     public var codeType: NSColor
     public var codeString: NSColor
     public var codeComment: NSColor
     public var codeNumber: NSColor
+    public var codeProperty: NSColor
 
     public static func standard() -> EditorTheme {
         EditorTheme(
@@ -36,21 +37,24 @@ public struct EditorTheme {
                                  dark: NSColor(red: 0.35, green: 0.58, blue: 1.0, alpha: 1)),
             codeColor: dynamic(light: NSColor(red: 0.72, green: 0.25, blue: 0.35, alpha: 1),
                                dark: NSColor(red: 0.90, green: 0.51, blue: 0.55, alpha: 1)),
-            codeBackground: dynamic(light: NSColor(white: 0.935, alpha: 1), dark: NSColor(white: 0.185, alpha: 1)),
+            codeBackground: dynamic(light: NSColor(white: 0.935, alpha: 1),
+                                    dark: NSColor(red: 0.173, green: 0.180, blue: 0.204, alpha: 1)), // Sonokai bg0 #2C2E34
             highlightBackground: dynamic(light: NSColor(red: 1.0, green: 0.95, blue: 0.60, alpha: 1),
                                          dark: NSColor(red: 0.42, green: 0.37, blue: 0.12, alpha: 1)),
             background: dynamic(light: NSColor(red: 0.972, green: 0.970, blue: 0.962, alpha: 1),
                                 dark: NSColor(white: 0.145, alpha: 1)),
             codeKeyword: dynamic(light: NSColor(red: 0.61, green: 0.15, blue: 0.55, alpha: 1),
-                                 dark: NSColor(red: 0.81, green: 0.51, blue: 0.87, alpha: 1)),
+                                 dark: NSColor(red: 0.988, green: 0.365, blue: 0.486, alpha: 1)), // red #FC5D7C
             codeType: dynamic(light: NSColor(red: 0.16, green: 0.42, blue: 0.62, alpha: 1),
-                              dark: NSColor(red: 0.45, green: 0.72, blue: 0.90, alpha: 1)),
+                              dark: NSColor(red: 0.463, green: 0.800, blue: 0.878, alpha: 1)), // blue #76CCE0
             codeString: dynamic(light: NSColor(red: 0.75, green: 0.28, blue: 0.16, alpha: 1),
-                                dark: NSColor(red: 0.90, green: 0.57, blue: 0.44, alpha: 1)),
+                                dark: NSColor(red: 0.906, green: 0.776, blue: 0.392, alpha: 1)), // yellow #E7C664
             codeComment: dynamic(light: NSColor(white: 0.58, alpha: 1),
-                                 dark: NSColor(white: 0.42, alpha: 1)),
+                                 dark: NSColor(red: 0.498, green: 0.518, blue: 0.565, alpha: 1)), // grey #7F8490
             codeNumber: dynamic(light: NSColor(red: 0.15, green: 0.45, blue: 0.40, alpha: 1),
-                                dark: NSColor(red: 0.48, green: 0.78, blue: 0.68, alpha: 1))
+                                dark: NSColor(red: 0.702, green: 0.616, blue: 0.953, alpha: 1)), // purple #B39DF3
+            codeProperty: dynamic(light: NSColor(red: 0.16, green: 0.42, blue: 0.62, alpha: 1),
+                                  dark: NSColor(red: 0.620, green: 0.816, blue: 0.447, alpha: 1)) // green #9ED072
         )
     }
 

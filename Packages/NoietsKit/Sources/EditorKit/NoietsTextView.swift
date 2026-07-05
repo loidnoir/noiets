@@ -152,6 +152,68 @@ public final class NoietsTextView: NSTextView {
         vim?.recordBackspace()
     }
 
+    // MARK: List continuation
+
+    public override func insertNewline(_ sender: Any?) {
+        if continueListItem() { return }
+        super.insertNewline(sender)
+    }
+
+    /// Return inside a list item continues the list: the new line repeats the
+    /// item's indent (tabs preserved) and marker — the next number for ordered
+    /// items, an unchecked box for tasks. Return on an empty item clears its
+    /// marker instead, ending the list. Uses the block scan, so code-fence
+    /// lines that merely start with "- " never trigger it.
+    private func continueListItem() -> Bool {
+        guard !isReadOnlyDocument else { return false }
+        let sel = selectedRange()
+        let ns = string as NSString
+        guard sel.length == 0, sel.location <= ns.length,
+              let scan = (textStorage?.delegate as? IncrementalHighlighter)?.currentScan,
+              !scan.lines.isEmpty
+        else { return false }
+        let line = scan.lines[scan.lineIndex(containing: sel.location)]
+        guard case .listItem(let markerRange, let ordered, let task, let contentStart) = line.kind,
+              sel.location >= contentStart
+        else { return false }
+
+        let lineStart = line.contentRange.location
+        let contentEnd = line.contentRange.location + line.contentRange.length
+
+        // Marker with no content: Return ends the list by clearing the marker.
+        if contentStart >= contentEnd {
+            insertText("", replacementRange:
+                NSRange(location: lineStart, length: contentStart - lineStart))
+            return true
+        }
+
+        // Rebuild the prefix from the scanned ranges: indent … marker …
+        // spacing (… task box …) exactly as typed, tabs and all.
+        var prefix = ns.substring(with:
+            NSRange(location: lineStart, length: markerRange.location - lineStart))
+        if ordered {
+            let marker = ns.substring(with: markerRange) // e.g. "3." / "3)"
+            let digits = marker.prefix { $0.isNumber }
+            prefix += "\((Int(digits) ?? 0) + 1)\(marker.dropFirst(digits.count))"
+        } else {
+            prefix += ns.substring(with: markerRange)
+        }
+        let markerEnd = markerRange.location + markerRange.length
+        if let task {
+            prefix += ns.substring(with:
+                NSRange(location: markerEnd, length: task.range.location - markerEnd))
+            prefix += "[ ]"
+            let taskEnd = task.range.location + task.range.length
+            prefix += ns.substring(with:
+                NSRange(location: taskEnd, length: contentStart - taskEnd))
+        } else {
+            prefix += ns.substring(with:
+                NSRange(location: markerEnd, length: contentStart - markerEnd))
+        }
+        insertText("\n" + prefix, replacementRange: sel)
+        return true
+    }
+
     // MARK: TK2 tripwire
 
     public override func viewDidMoveToWindow() {

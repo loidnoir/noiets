@@ -107,6 +107,7 @@ enum SelfTest {
             }
             if let editorView = findEditorView(in: window) {
                 out["vim"] = vimChecks(editorView)
+                out["listContinuation"] = listContinuationChecks(editorView)
                 // Non-nil now = the 0.5s-kick download landed and cached.
                 out["remoteImageCached"] =
                     editorView.layoutController?.imageProvider.image(forPath: remoteProbeURL) != nil
@@ -199,6 +200,54 @@ enum SelfTest {
         }
         guard let content = window.contentView else { return nil }
         return walk(content)
+    }
+
+    /// Return-in-a-list continuation: new items inherit marker and indent
+    /// (tabs preserved), ordered lists count up, tasks get a fresh box, and
+    /// Return on an empty item clears its marker.
+    private static func listContinuationChecks(_ editorView: MarkdownEditorView) -> [String: Any] {
+        var result: [String: Any] = [:]
+        let tv = editorView.textView
+        editorView.onTextChange = nil // keep test edits off disk
+        editorView.window?.makeFirstResponder(tv)
+
+        func key(_ ch: String, keyCode: UInt16 = 0) {
+            guard let event = NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: [],
+                timestamp: 0, windowNumber: tv.window?.windowNumber ?? 0, context: nil,
+                characters: ch, charactersIgnoringModifiers: ch,
+                isARepeat: false, keyCode: keyCode
+            ) else { return }
+            tv.keyDown(with: event)
+        }
+        func keys(_ s: String) { s.forEach { key(String($0)) } }
+        func returnKey() { key("\r", keyCode: 36) }
+        func esc() { key("\u{1B}", keyCode: 53) }
+        func line(_ n: Int) -> String {
+            let lines = tv.string.components(separatedBy: "\n")
+            return n < lines.count ? lines[n] : "<missing>"
+        }
+        func run(_ text: String, caretKeys: String) {
+            editorView.load(text: text)
+            keys(caretKeys)
+            returnKey()
+            esc()
+        }
+
+        run("- alpha\n", caretKeys: "ggA")
+        result["bullet"] = line(1) == "- " ? "PASS" : "FAIL: \(line(1))"
+        run("\t- beta\n", caretKeys: "ggA")
+        result["tabbedBullet"] = line(1) == "\t- " ? "PASS" : "FAIL: \(line(1))"
+        run("3. three\n", caretKeys: "ggA")
+        result["orderedIncrements"] = line(1) == "4. " ? "PASS" : "FAIL: \(line(1))"
+        run("- [x] done\n", caretKeys: "ggA")
+        result["taskFreshBox"] = line(1) == "- [ ] " ? "PASS" : "FAIL: \(line(1))"
+        run("- alpha\n- \n", caretKeys: "ggjA")
+        result["emptyItemEndsList"] = line(1).isEmpty ? "PASS" : "FAIL: \(line(1))"
+        run("mid split\n", caretKeys: "gg0wi") // caret before "split", not a list
+        result["plainLineUntouched"] = line(0) == "mid " && line(1) == "split"
+            ? "PASS" : "FAIL: \(line(0))|\(line(1))"
+        return result
     }
 
     /// Drives vim through real keyDown events on the actual text view —

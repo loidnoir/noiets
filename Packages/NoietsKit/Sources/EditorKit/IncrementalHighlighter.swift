@@ -46,10 +46,11 @@ public final class IncrementalHighlighter: NSObject {
     private static let collapsedFont = NSFont.systemFont(ofSize: 0.1)
 
     /// Distance from a list marker's start (or the quote bar) to the text —
-    /// the one column every list style and quote body aligns to.
+    /// the one column every list style and quote body aligns to. Tightened
+    /// ~23% from the natural "- " advance.
     static func listTextInset(_ theme: EditorTheme) -> CGFloat {
         let bold = NSFont.systemFont(ofSize: theme.baseFontSize, weight: .bold)
-        return ("- " as NSString).size(withAttributes: [.font: bold]).width + 4
+        return (("- " as NSString).size(withAttributes: [.font: bold]).width + 4) * 0.77
     }
 
     public init(theme: EditorTheme) {
@@ -492,7 +493,7 @@ public final class IncrementalHighlighter: NSObject {
         case .string: return theme.codeString
         case .comment: return theme.codeComment
         case .number: return theme.codeNumber
-        case .property: return theme.codeType
+        case .property: return theme.codeProperty
         }
     }
 

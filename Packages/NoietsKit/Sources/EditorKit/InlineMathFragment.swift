@@ -120,7 +120,7 @@ final class OverlayLineFragment: NSTextLayoutFragment {
                 let dashWidth = ("-" as NSString)
                     .size(withAttributes: [.font: NSFont.systemFont(ofSize: theme.baseFontSize,
                                                                     weight: .bold)]).width
-                let radius: CGFloat = theme.baseFontSize * 0.31
+                let radius: CGFloat = theme.baseFontSize * 0.2015
                 let center = CGPoint(
                     x: point.x + bounds.origin.x + anchor.x + dashWidth / 2,
                     y: point.y + textMidline
@@ -134,7 +134,7 @@ final class OverlayLineFragment: NSTextLayoutFragment {
                 let dashWidth = ("-" as NSString)
                     .size(withAttributes: [.font: NSFont.systemFont(ofSize: theme.baseFontSize,
                                                                     weight: .bold)]).width
-                let radius: CGFloat = theme.baseFontSize * 0.31
+                let radius: CGFloat = theme.baseFontSize * 0.2015
                 let center = CGPoint(
                     x: point.x + bounds.origin.x + anchor.x + dashWidth / 2,
                     y: point.y + textMidline
