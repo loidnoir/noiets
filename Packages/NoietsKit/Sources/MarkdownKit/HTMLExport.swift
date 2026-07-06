@@ -144,6 +144,14 @@ public enum HTMLExport {
           blockquote { border-color: #555; color: #aaa; }
           mark { background: #6b5d1f; color: #eee; }
         }
+        /* PDF export prints this same document: keep the code/pre/mark
+           backgrounds (print media strips them by default) and let the
+           print margins own the page inset instead of the 3rem body margin. */
+        * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        @media print {
+          body { margin: 0 auto; padding: 0; }
+          pre { overflow-x: hidden; white-space: pre-wrap; }
+        }
         </style>
         </head>
         <body>
