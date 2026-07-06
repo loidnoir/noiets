@@ -438,6 +438,23 @@ final class MainWindowController: NSWindowController {
         }
     }
 
+    @objc func exportPDF(_: Any?) {
+        guard let url = session.currentNoteURL, let window else { return }
+        session.flushPendingSave()
+        let title = url.deletingPathExtension().lastPathComponent
+        let markdown = editorVC.editor.string
+        let baseURL = url.deletingLastPathComponent()
+
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "\(title).pdf"
+        panel.allowedContentTypes = [.pdf]
+        panel.beginSheetModal(for: window) { response in
+            guard response == .OK, let dest = panel.url else { return }
+            let html = HTMLExport.html(from: markdown, title: title)
+            PDFExport.export(html: html, baseURL: baseURL, to: dest, for: window)
+        }
+    }
+
     // MARK: Overlays
 
     @objc func quickOpen(_: Any?) {
@@ -520,6 +537,7 @@ extension MainWindowController: NSMenuItemValidation {
             #selector(MainWindowController.revealInFinder(_:)),
             #selector(MainWindowController.moveNoteToTrash(_:)),
             #selector(MainWindowController.exportHTML(_:)),
+            #selector(MainWindowController.exportPDF(_:)),
             #selector(MainWindowController.toggleNoteLock(_:)),
         ]
         if menuItem.action == #selector(MainWindowController.toggleNoteLock(_:)),

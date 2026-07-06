@@ -51,6 +51,8 @@ enum MainMenu {
         file.addItem(.separator())
         file.addItem({ let i = NSMenuItem(title: "Export as HTML…", action: Selector(("exportHTML:")), keyEquivalent: "e")
                        i.keyEquivalentModifierMask = [.command, .shift]; return i }())
+        file.addItem({ let i = NSMenuItem(title: "Export as PDF…", action: Selector(("exportPDF:")), keyEquivalent: "e")
+                       i.keyEquivalentModifierMask = [.command, .option, .shift]; return i }())
         file.addItem(.separator())
         file.addItem({ let i = NSMenuItem(title: "Change Project…", action: Selector(("changeVault:")), keyEquivalent: "o")
                        i.keyEquivalentModifierMask = [.command, .control]; return i }())
