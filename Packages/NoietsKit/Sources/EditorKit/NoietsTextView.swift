@@ -83,12 +83,30 @@ public final class NoietsTextView: NSTextView {
     /// Double-click hook (image lines open externally). Returns true if handled.
     public var onDoubleClick: ((Int) -> Bool)?
 
+    /// Single-click hook for rendered image lines (open/zoom the image).
+    /// Returns true if handled — the click then never moves the caret.
+    public var onImageLineClick: ((Int) -> Bool)?
+
     public override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
         if event.clickCount == 2, let onDoubleClick {
-            let point = convert(event.locationInWindow, from: nil)
             let index = characterIndexForInsertion(at: point)
             if index >= 0, onDoubleClick(index) {
                 return
+            }
+        }
+        // Single click only counts as an image click when it lands inside a
+        // laid-out fragment — clicks in the empty space below the document
+        // map to the last line's index and must keep placing the caret.
+        if event.clickCount == 1, let onImageLineClick, let layoutManager = textLayoutManager {
+            let docPoint = CGPoint(x: point.x - textContainerInset.width,
+                                   y: point.y - textContainerInset.height)
+            if let fragment = layoutManager.textLayoutFragment(for: docPoint),
+               fragment.layoutFragmentFrame.contains(docPoint) {
+                let index = characterIndexForInsertion(at: point)
+                if index >= 0, onImageLineClick(index) {
+                    return
+                }
             }
         }
         super.mouseDown(with: event)

@@ -108,6 +108,7 @@ enum SelfTest {
             if let editorView = findEditorView(in: window) {
                 out["vim"] = vimChecks(editorView)
                 out["listContinuation"] = listContinuationChecks(editorView)
+                out["autoVisual"] = autoVisualChecks(editorView)
                 // Non-nil now = the 0.5s-kick download landed and cached.
                 out["remoteImageCached"] =
                     editorView.layoutController?.imageProvider.image(forPath: remoteProbeURL) != nil
@@ -200,6 +201,60 @@ enum SelfTest {
         }
         guard let content = window.contentView else { return nil }
         return walk(content)
+    }
+
+    /// Native selections (mouse drag / shift-arrows arrive as setSelectedRange
+    /// outside key handling) enter visual mode; collapsing exits; operators
+    /// then apply to the mouse-made selection.
+    private static func autoVisualChecks(_ editorView: MarkdownEditorView) -> [String: Any] {
+        var result: [String: Any] = [:]
+        let tv = editorView.textView
+        let vim = editorView.vim
+        editorView.onTextChange = nil // keep test edits off disk
+        editorView.window?.makeFirstResponder(tv)
+
+        func key(_ ch: String, keyCode: UInt16 = 0) {
+            guard let event = NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: [],
+                timestamp: 0, windowNumber: tv.window?.windowNumber ?? 0, context: nil,
+                characters: ch, charactersIgnoringModifiers: ch,
+                isARepeat: false, keyCode: keyCode
+            ) else { return }
+            tv.keyDown(with: event)
+        }
+
+        editorView.load(text: "alpha beta gamma\nsecond line\n")
+        tv.setSelectedRange(NSRange(location: 0, length: 5)) // "mouse" selection
+        result["entersVisual"] = vim.mode.label == "VISUAL"
+            ? "PASS" : "FAIL: \(vim.mode.label)"
+
+        key("d") // operator applies to the mouse-made selection
+        let line1 = tv.string.components(separatedBy: "\n").first ?? ""
+        result["operatorOnSelection"] = line1 == " beta gamma" ? "PASS" : "FAIL: \(line1)"
+        result["backToNormalAfterD"] = vim.mode.label == "NORMAL"
+            ? "PASS" : "FAIL: \(vim.mode.label)"
+
+        tv.setSelectedRange(NSRange(location: 2, length: 3))
+        result["reentersVisual"] = vim.mode.label == "VISUAL"
+            ? "PASS" : "FAIL: \(vim.mode.label)"
+        tv.setSelectedRange(NSRange(location: 1, length: 0)) // click collapses
+        result["clickExitsVisual"] = vim.mode.label == "NORMAL"
+            ? "PASS" : "FAIL: \(vim.mode.label)"
+
+        // Key-driven visual still works and is not disturbed by the sync.
+        key("v")
+        key("l")
+        result["keyVisualIntact"] = vim.mode.label == "VISUAL" && tv.selectedRange().length == 2
+            ? "PASS" : "FAIL: \(vim.mode.label)/\(tv.selectedRange().length)"
+        key("\u{1B}", keyCode: 53)
+
+        // Insert mode keeps native selections native.
+        key("i")
+        tv.setSelectedRange(NSRange(location: 0, length: 4))
+        result["insertStaysNative"] = vim.mode.label == "INSERT"
+            ? "PASS" : "FAIL: \(vim.mode.label)"
+        key("\u{1B}", keyCode: 53)
+        return result
     }
 
     /// Return-in-a-list continuation: new items inherit marker and indent

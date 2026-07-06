@@ -118,6 +118,18 @@ public final class MarkdownEditorView: NSView {
         textView.onDoubleClick = { [weak self] index in
             self?.openImageIfPresent(onLineAt: index) ?? false
         }
+        // Single click zooms a *rendered* image; when the caret is already
+        // on that line the source is revealed and clicks edit it instead.
+        textView.onImageLineClick = { [weak self] index in
+            guard let self else { return false }
+            let text = self.textView.string as NSString
+            guard text.length > 0 else { return false }
+            let clicked = text.lineRange(for: NSRange(location: min(index, text.length - 1), length: 0))
+            let caret = self.textView.selectedRange().location
+            let active = text.lineRange(for: NSRange(location: min(caret, text.length), length: 0))
+            guard clicked != active else { return false }
+            return self.openImageIfPresent(onLineAt: index)
+        }
 
         scrollView.documentView = textView
         scrollView.translatesAutoresizingMaskIntoConstraints = false
@@ -592,6 +604,9 @@ extension MarkdownEditorView: NSTextViewDelegate {
         let text = textView.string as NSString
         let selection = textView.selectedRange()
         guard selection.location != NSNotFound else { return }
+        // Any natively made selection (mouse drag, shift-arrows) enters
+        // visual mode; collapsing it by click leaves visual.
+        vim.syncNativeSelection(selection)
         let paragraph = text.length == 0
             ? NSRange(location: 0, length: 0)
             : text.paragraphRange(for: NSRange(

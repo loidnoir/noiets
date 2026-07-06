@@ -94,6 +94,11 @@ public final class VimEngine {
         guard target != nil else { return false }
         if key.hasCommand { return false } // never eat menu shortcuts
 
+        // Selection changes made while a key is handled are engine-driven;
+        // syncNativeSelection must not re-interpret them as mouse selections.
+        handlingKey = true
+        defer { handlingKey = false }
+
         if searchActive { return handleSearchKey(key) }
         if commandActive { return handleCommandKey(key) }
 
@@ -102,6 +107,34 @@ public final class VimEngine {
             return handleInsertKey(key)
         case .normal, .visual, .operatorPending:
             return handleNormalKey(key)
+        }
+    }
+
+    private var handlingKey = false
+
+    /// Mirrors selections made natively (mouse drag, double-click word
+    /// select, shift-arrows) into character-visual mode so vim operators
+    /// apply to them; a click that collapses the selection while visual
+    /// drops back to normal. Changes made during key handling are the
+    /// engine's own and are ignored.
+    public func syncNativeSelection(_ range: NSRange) {
+        guard !handlingKey, target != nil else { return }
+        switch mode {
+        case .insert, .operatorPending:
+            return
+        case .visual:
+            if range.length == 0 {
+                mode = .normal
+            } else {
+                visualAnchor = range.location
+                visualHead = range.location + range.length - 1
+                mode = .visual(line: false) // a drag re-shapes any linewise selection
+            }
+        case .normal:
+            guard range.length > 0 else { return }
+            visualAnchor = range.location
+            visualHead = range.location + range.length - 1
+            mode = .visual(line: false)
         }
     }
 
