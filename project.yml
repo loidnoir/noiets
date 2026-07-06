@@ -20,6 +20,10 @@ targets:
       - App
       - path: App/Resources
         buildPhase: resources
+      # Icon Composer document; actool compiles it so macOS 26 renders the
+      # icon edge-to-edge in the squircle instead of the legacy plate.
+      - path: App/AppIcon.icon
+        buildPhase: resources
     dependencies:
       - package: NoietsKit
         products:
@@ -43,9 +47,9 @@ targets:
       base:
         PRODUCT_NAME: Noiets
         PRODUCT_BUNDLE_IDENTIFIER: com.noiets.Noiets
-        # App icon comes from App/Assets.xcassets; `make build` regenerates
-        # the PNGs from App/Resources/Logo.png whenever the logo changes.
-        # macOS 26 applies the rounded squircle mask automatically.
+        # App icon: App/AppIcon.icon (macOS 26 squircle rendering) with the
+        # App/Assets.xcassets appiconset as legacy fallback; `make icon`
+        # regenerates both from App/Resources/Logo.png when the logo changes.
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"

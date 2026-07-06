@@ -2,15 +2,23 @@ DERIVED := build
 APP := $(DERIVED)/Build/Products/Debug/Noiets.app
 LOGO := App/Resources/Logo.png
 ICONSET := App/Assets.xcassets/AppIcon.appiconset
+ICON := App/AppIcon.icon
 
 .PHONY: gen icon build test run clean
 
 gen:
 	xcodegen generate
 
-# App-icon PNGs are derived from Logo.png; the @2x-512 file stands in for
-# the whole set so the sips fan-out only re-runs when the logo changes.
-icon: $(ICONSET)/icon_512@2x.png
+# All app-icon artifacts are derived from Logo.png and committed (the release
+# workflow builds straight from the repo without running these rules):
+#  - AppIcon.icon: Icon Composer document; without it macOS 26 shows the icon
+#    shrunken on a system plate instead of edge-to-edge in the squircle.
+#  - appiconset PNGs: legacy fallback (icns for Finder/Dock pre-26 contexts);
+#    the @2x-512 file stands in for the whole sips fan-out.
+icon: $(ICON)/icon.json $(ICONSET)/icon_512@2x.png
+
+$(ICON)/icon.json: $(LOGO) Scripts/GenAppIcon.swift
+	swift Scripts/GenAppIcon.swift $(LOGO) $(ICON)
 
 $(ICONSET)/icon_512@2x.png: $(LOGO)
 	@mkdir -p $(ICONSET)
