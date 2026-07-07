@@ -191,11 +191,6 @@ final class TrashViewController: NSViewController {
 
     // MARK: Keyboard (vim list navigation; Enter restores, dd deletes)
 
-    /// The list cursor's pill rect in window coordinates (pane-jump smears).
-    var cursorWindowRect: NSRect? {
-        tableView.cursorWindowRect
-    }
-
     func focusList() {
         _ = view
         view.window?.makeFirstResponder(tableView)

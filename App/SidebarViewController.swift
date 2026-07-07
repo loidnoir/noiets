@@ -258,11 +258,6 @@ final class SidebarViewController: NSViewController {
         }
     }
 
-    /// The tree cursor's pill rect in window coordinates (pane-jump smears).
-    var cursorWindowRect: NSRect? {
-        outlineView.cursorWindowRect
-    }
-
     func selectedNodeURL() -> URL? {
         guard outlineView.selectedRow >= 0,
             let item = outlineView.item(atRow: outlineView.selectedRow) as? Item

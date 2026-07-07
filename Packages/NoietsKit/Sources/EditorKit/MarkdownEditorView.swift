@@ -382,13 +382,6 @@ public final class MarkdownEditorView: NSView {
         }
     }
 
-    /// The current caret cell in window coordinates — pane-jump animations
-    /// smear between this and the tree cursor.
-    public var caretWindowRect: NSRect? {
-        guard let rect = caretGlyphRect(at: vim.displayCaret) else { return nil }
-        return textView.convert(rect, to: nil)
-    }
-
     /// Rect of the character cell under the caret, in text-view coordinates.
     private func caretGlyphRect(at location: Int) -> NSRect? {
         guard let window = textView.window else { return nil }

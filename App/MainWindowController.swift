@@ -138,7 +138,7 @@ final class MainWindowController: NSWindowController {
         updateVimBar(mode: .normal)
 
         // Pane navigation: ⌃h from the editor → tree; ⌃l/Esc in tree → editor.
-        // Each jump trails a cursor smear from the old cursor home to the new.
+        // Each jump gets a brief accent pulse on the pane the cursor lands in.
         editorVC.editor.textView.onPaneNavigate = { [weak self] direction in
             if direction == "h" || direction == "j" || direction == "k" {
                 self?.focusSidebarPane()
@@ -146,9 +146,8 @@ final class MainWindowController: NSWindowController {
         }
         sidebarVC.onFocusEditor = { [weak self] in
             guard let self else { return }
-            let from = self.sidebarVC.cursorWindowRect
             self.focusCurrentContent()
-            UIAnimation.smearFocus(from: from, to: self.contentCursorWindowRect(), in: self.window)
+            UIAnimation.pulseFocus(of: self.hostVC.view)
         }
         searchVC.onFocusSidebar = { [weak self] in self?.focusSidebarPane() }
         trashVC.onFocusSidebar = { [weak self] in self?.focusSidebarPane() }
@@ -336,27 +335,10 @@ final class MainWindowController: NSWindowController {
         window?.title = session.vault.name
     }
 
-    /// ⌃h from any content view: focus the tree, trailing a cursor smear
-    /// from the content cursor's old home to the tree row it lands on.
+    /// ⌃h from any content view: focus the tree, pulse the sidebar.
     private func focusSidebarPane() {
-        let from = contentCursorWindowRect()
         sidebarVC.focusTree()
-        UIAnimation.smearFocus(from: from, to: sidebarVC.cursorWindowRect, in: window)
-    }
-
-    /// Where the cursor visually lives in the content pane (nil for the
-    /// image viewer — no cursor, no smear).
-    private func contentCursorWindowRect() -> NSRect? {
-        switch hostVC.current {
-        case let vc where vc === searchVC:
-            return searchVC.cursorWindowRect
-        case let vc where vc === trashVC:
-            return trashVC.cursorWindowRect
-        case let vc where vc === imageVC:
-            return nil
-        default:
-            return editorVC.editor.caretWindowRect
-        }
+        UIAnimation.pulseFocus(of: sidebarVC.view)
     }
 
     /// ⌃l from the tree focuses whatever the content pane currently shows.

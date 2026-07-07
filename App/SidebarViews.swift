@@ -53,21 +53,6 @@ final class SoftRowView: NSTableRowView {
     }
 }
 
-extension NSTableView {
-    /// The selected row's soft-pill rect in window coordinates — where the
-    /// keyboard cursor visually lives; pane-jump smears start and land here.
-    var cursorWindowRect: NSRect? {
-        guard selectedRow >= 0 else { return nil }
-        let rowRect = rect(ofRow: selectedRow)
-        guard !rowRect.isEmpty else { return nil }
-        let pill = NSRect(
-            x: rowRect.minX + 10, y: rowRect.minY + 2,
-            width: rowRect.width - 20, height: rowRect.height - 4
-        )
-        return convert(pill, to: nil)
-    }
-}
-
 /// Repaints row selections when keyboard focus enters/leaves the list, so
 /// the focus tint updates immediately.
 private func repaintSelections(of table: NSTableView) {

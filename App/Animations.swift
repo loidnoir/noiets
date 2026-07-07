@@ -21,78 +21,37 @@ enum UIAnimation {
         view.layer?.add(fade, forKey: "contentFade")
     }
 
-    /// Cursor trail for keyboard focus jumps (⌃h/⌃l/Esc): a quad stretched
-    /// between the cursor's old home (one pane) and its new one (the other)
-    /// collapses into the destination while fading — the same smear the
-    /// editor caret leaves, but across panes. Rects are window coordinates.
-    static func smearFocus(from source: NSRect?, to target: NSRect?, in window: NSWindow?) {
-        guard enabled, let source, let target, let host = window?.contentView else { return }
-        let from = host.convert(source, from: nil)
-        let to = host.convert(target, from: nil)
-        guard from != to else { return }
-
-        let overlay = PassthroughView(frame: host.bounds)
-        overlay.autoresizingMask = [.width, .height]
-        overlay.wantsLayer = true
-        host.addSubview(overlay, positioned: .above, relativeTo: nil)
-        guard let hostLayer = overlay.layer else {
-            overlay.removeFromSuperview()
+    /// One-shot accent outline that swells and fades over `pane` — marks a
+    /// keyboard focus jump (⌃h/⌃l/Esc) so the eye lands with the cursor.
+    static func pulseFocus(of pane: NSView) {
+        guard enabled, pane.window != nil else { return }
+        let flash = PassthroughView(frame: pane.bounds.insetBy(dx: 6, dy: 6))
+        flash.autoresizingMask = [.width, .height]
+        flash.wantsLayer = true
+        pane.addSubview(flash, positioned: .above, relativeTo: nil)
+        guard let layer = flash.layer else {
+            flash.removeFromSuperview()
             return
         }
-        var accent = UITheme.informationColor
-        host.effectiveAppearance.performAsCurrentDrawingAppearance {
-            accent = UITheme.informationColor
+        layer.cornerRadius = 10
+        layer.borderWidth = 2
+        var accent = UITheme.informationColor.cgColor
+        pane.effectiveAppearance.performAsCurrentDrawingAppearance {
+            accent = UITheme.informationColor.cgColor
         }
-        let smear = CAShapeLayer()
-        smear.fillColor = accent.withAlphaComponent(0.32).cgColor
-        let (start, end) = smearQuads(from: from, to: to)
-        smear.path = end
-        smear.opacity = 0
-        hostLayer.addSublayer(smear)
+        layer.borderColor = accent
+        layer.opacity = 0
 
-        let collapse = CABasicAnimation(keyPath: "path")
-        collapse.fromValue = start
-        let fade = CABasicAnimation(keyPath: "opacity")
-        fade.fromValue = 1
-        let group = CAAnimationGroup()
-        group.animations = [collapse, fade]
-        group.duration = 0.25
-        group.timingFunction = CAMediaTimingFunction(name: .easeOut)
-        smear.add(group, forKey: "smear")
+        let pulse = CAKeyframeAnimation(keyPath: "opacity")
+        pulse.values = [0, 0.55, 0]
+        pulse.keyTimes = [0, 0.2, 1]
+        pulse.duration = 0.4
+        pulse.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        layer.add(pulse, forKey: "focusPulse")
         Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 350_000_000)
-            overlay.removeFromSuperview()
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            flash.removeFromSuperview()
         }
-    }
-
-    /// Start quad: leading edge on the target rect, trailing edge on the far
-    /// side of the source; end state is the target rect itself, so the path
-    /// animation sweeps the tail in behind the jump.
-    private static func smearQuads(from old: NSRect, to new: NSRect) -> (CGPath, CGPath) {
-        // Corner order tl → tr → br → bl (any consistent winding works).
-        func corners(_ r: NSRect) -> [CGPoint] {
-            [
-                CGPoint(x: r.minX, y: r.minY), CGPoint(x: r.maxX, y: r.minY),
-                CGPoint(x: r.maxX, y: r.maxY), CGPoint(x: r.minX, y: r.maxY),
-            ]
-        }
-        let o = corners(old)
-        let n = corners(new)
-        let dx = new.midX - old.midX
-        let dy = new.midY - old.midY
-        let start: [CGPoint]
-        if abs(dx) >= abs(dy) {
-            start = dx >= 0 ? [o[0], n[1], n[2], o[3]] : [n[0], o[1], o[2], n[3]]
-        } else {
-            start = dy >= 0 ? [o[0], o[1], n[2], n[3]] : [n[0], n[1], o[2], o[3]]
-        }
-        func path(_ points: [CGPoint]) -> CGPath {
-            let p = CGMutablePath()
-            p.addLines(between: points)
-            p.closeSubpath()
-            return p
-        }
-        return (path(start), path(n))
     }
 }
 
