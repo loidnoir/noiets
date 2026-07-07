@@ -29,6 +29,20 @@ import Testing
         #expect(out.contains("</code></pre>"))
     }
 
+    @Test func mermaidBlockBecomesDiagramDiv() {
+        let out = body("```mermaid\ngraph TD\n  A --> B\n```\n")
+        #expect(out.contains("<div class=\"mermaid\">"))
+        #expect(out.contains("A --&gt; B"))
+        #expect(out.contains("</div>"))
+        #expect(out.contains("mermaid.initialize"))
+        #expect(!out.contains("<pre>"))
+    }
+
+    @Test func nonMermaidExportSkipsMermaidScript() {
+        let out = body("```swift\nlet a = 1\n```\n")
+        #expect(!out.contains("mermaid"))
+    }
+
     @Test func listsAndTasks() {
         let out = body("- one\n- [x] done\n\n1. first\n")
         #expect(out.contains("<ul>"))

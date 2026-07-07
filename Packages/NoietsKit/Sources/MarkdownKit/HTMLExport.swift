@@ -11,9 +11,10 @@ public enum HTMLExport {
         var body: [String] = []
 
         enum Container {
-            case none, ul, ol, blockquote, pre(String?), table
+            case none, ul, ol, blockquote, pre(String?), mermaid, table
         }
         var container = Container.none
+        var hasMermaid = false
 
         func close() {
             switch container {
@@ -22,6 +23,7 @@ public enum HTMLExport {
             case .ol: body.append("</ol>")
             case .blockquote: body.append("</blockquote>")
             case .pre: body.append("</code></pre>")
+            case .mermaid: body.append("</div>")
             case .table: body.append("</tbody></table>")
             }
             container = .none
@@ -29,7 +31,8 @@ public enum HTMLExport {
 
         func ensure(_ target: Container) {
             switch (container, target) {
-            case (.ul, .ul), (.ol, .ol), (.blockquote, .blockquote), (.pre, .pre), (.table, .table):
+            case (.ul, .ul), (.ol, .ol), (.blockquote, .blockquote), (.pre, .pre),
+                 (.mermaid, .mermaid), (.table, .table):
                 return
             default:
                 close()
@@ -41,6 +44,7 @@ public enum HTMLExport {
                 case .pre(let lang):
                     let cls = lang.map { " class=\"language-\(escape($0))\"" } ?? ""
                     body.append("<pre><code\(cls)>")
+                case .mermaid: body.append("<div class=\"mermaid\">")
                 case .table: body.append("<table><tbody>")
                 }
                 container = target
@@ -60,13 +64,22 @@ public enum HTMLExport {
                 close()
                 body.append("<hr>")
             case .fenceDelimiter(let language):
-                if case .pre = container {
+                switch container {
+                case .pre, .mermaid:
                     close()
-                } else {
-                    ensure(.pre(language))
+                default:
+                    if language?.lowercased() == "mermaid" {
+                        hasMermaid = true
+                        ensure(.mermaid)
+                    } else {
+                        ensure(.pre(language))
+                    }
                 }
             case .code:
-                if case .pre = container {} else { ensure(.pre(nil)) }
+                switch container {
+                case .pre, .mermaid: break
+                default: ensure(.pre(nil))
+                }
                 body.append(escape(ns.substring(with: line.contentRange)))
             case .listItem(_, let ordered, let task, let contentStart):
                 ensure(ordered ? .ol : .ul)
@@ -135,6 +148,7 @@ public enum HTMLExport {
         a { color: #2069e0; text-decoration: none; }
         hr { border: none; border-top: 1px solid #ddd; margin: 2em 0; }
         .math { color: #8a4a55; font-style: italic; }
+        .mermaid svg { max-width: 100%; }
         img { max-width: 100%; }
         @media (prefers-color-scheme: dark) {
           body { background: #1d1d1f; color: #dcdcda; }
@@ -155,11 +169,26 @@ public enum HTMLExport {
         </style>
         </head>
         <body>
-        \(body.joined(separator: "\n"))
+        \(body.joined(separator: "\n"))\(hasMermaid ? Self.mermaidScript : "")
         </body>
         </html>
         """
     }
+
+    /// The exact tag mermaid exports embed; PDF export swaps it for the
+    /// vendored source so printing never touches the network.
+    public static let mermaidScriptTag =
+        "<script src=\"https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js\"></script>"
+
+    /// Only exports containing a ```mermaid fence pull in the renderer —
+    /// from the CDN, so the exported file stays a single small document.
+    /// Offline, the diagram degrades to its readable source text.
+    private static let mermaidScript = """
+
+    \(mermaidScriptTag)
+    <script>mermaid.initialize({ startOnLoad: true, theme: \
+    matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'neutral' });</script>
+    """
 
     // MARK: Inline rendering
 

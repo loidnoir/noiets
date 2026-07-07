@@ -1,4 +1,6 @@
 import AppKit
+import MarkdownKit
+import RenderKit
 import WebKit
 
 /// Renders the HTML export in an offscreen web view and prints it to a
@@ -15,6 +17,14 @@ final class PDFExport: NSObject, WKNavigationDelegate {
 
     static func export(html: String, baseURL: URL?, to destination: URL,
                        for window: NSWindow, completion: @escaping (Bool) -> Void = { _ in }) {
+        var html = html
+        // Mermaid documents: render offline with the vendored script instead
+        // of the HTML export's CDN reference.
+        if html.contains(HTMLExport.mermaidScriptTag),
+           let js = MermaidRenderer.vendoredScript() {
+            html = html.replacingOccurrences(of: HTMLExport.mermaidScriptTag,
+                                             with: "<script>\(js)</script>")
+        }
         let exporter = PDFExport(destination: destination, window: window, completion: completion)
         active.append(exporter)
         exporter.webView.loadHTMLString(html, baseURL: baseURL)
@@ -33,9 +43,28 @@ final class PDFExport: NSObject, WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFinish _: WKNavigation!) {
-        // Give WebKit one beat to finish layout before paginating.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-            self?.runPrintOperation()
+        // Mermaid renders async after load — poll briefly (≤3s) until every
+        // diagram div holds its svg, then print. Documents without diagrams
+        // pass the check immediately.
+        waitForMermaid(attempts: 15)
+    }
+
+    private func waitForMermaid(attempts: Int) {
+        webView.evaluateJavaScript(
+            "Array.from(document.querySelectorAll('.mermaid')).every(el => el.querySelector('svg'))"
+        ) { [weak self] value, _ in
+            Task { @MainActor [weak self] in
+                if (value as? Bool) != false || attempts <= 0 {
+                    // One more beat for WebKit to finish layout before paginating.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        self?.runPrintOperation()
+                    }
+                } else {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        self?.waitForMermaid(attempts: attempts - 1)
+                    }
+                }
+            }
         }
     }
 

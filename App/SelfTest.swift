@@ -1,6 +1,7 @@
 import AppKit
 import EditorKit
 import IndexKit
+import RenderKit
 import VaultStore
 
 /// Dev-only functional smoke test: NOIETS_SELFTEST=1 makes the app print a
@@ -13,11 +14,17 @@ enum SelfTest {
         let env = ProcessInfo.processInfo.environment
         guard env["NOIETS_SELFTEST"] == "1" else { return }
         let delay = Double(env["NOIETS_SELFTEST_DELAY"] ?? "") ?? 1.0
-        // Kick a remote image fetch now; the report checks the cache later.
+        // Kick a remote image fetch and a mermaid render now; the report
+        // checks both caches later.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             if let window = NSApp.windows.first(where: { $0.isVisible }),
                let editorView = findEditorView(in: window) {
                 _ = editorView.layoutController?.imageProvider.image(forPath: Self.remoteProbeURL)
+                _ = MermaidRenderer.shared.image(
+                    source: Self.mermaidProbeSource,
+                    background: editorView.theme.background,
+                    fontSize: editorView.theme.baseFontSize
+                )
             }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
@@ -65,6 +72,23 @@ enum SelfTest {
     private static let remoteProbeURL =
         "https://www.google.com/images/branding/googlelogo/2x/googlelogo_color_272x92dp.png"
 
+    /// Must match the fence body of any NOIETS_EDITOR_SNAPSHOT_DOC mermaid
+    /// block byte for byte — the 0.5s kick warms the cache so the one-shot
+    /// snapshot sees the finished diagram. NOIETS_MERMAID_PROBE_FILE swaps in
+    /// an arbitrary diagram source for debugging.
+    static var mermaidProbeSource: String {
+        if let path = ProcessInfo.processInfo.environment["NOIETS_MERMAID_PROBE_FILE"],
+           let custom = try? String(contentsOfFile: path, encoding: .utf8) {
+            return custom.trimmingCharacters(in: .newlines)
+        }
+        return """
+        graph TD
+          A[Start] --> B{Choice}
+          B -->|yes| C[Done]
+          B -->|no| D[Retry]
+        """
+    }
+
     private static func report(session: VaultSession?) {
         var out: [String: Any] = [:]
         out["vault"] = session?.vault.rootURL.path ?? "<none>"
@@ -106,6 +130,25 @@ enum SelfTest {
                 out["livePreview"] = livePreviewChecks(editor)
             }
             if let editorView = findEditorView(in: window) {
+                // The 0.5s kick rendered the probe; a hit here proves the
+                // whole offscreen WebView pipeline (load → render → snapshot).
+                out["mermaidRendered"] = MermaidRenderer.shared.hasCachedImage(
+                    source: mermaidProbeSource,
+                    background: editorView.theme.background,
+                    fontSize: editorView.theme.baseFontSize
+                )
+                out["mermaidState"] = MermaidRenderer.shared.debugState(
+                    source: mermaidProbeSource,
+                    background: editorView.theme.background,
+                    fontSize: editorView.theme.baseFontSize
+                )
+                if let image = MermaidRenderer.shared.image(
+                    source: mermaidProbeSource,
+                    background: editorView.theme.background,
+                    fontSize: editorView.theme.baseFontSize
+                ) {
+                    out["mermaidImageSize"] = NSStringFromSize(image.size)
+                }
                 out["vim"] = vimChecks(editorView)
                 out["listContinuation"] = listContinuationChecks(editorView)
                 out["autoVisual"] = autoVisualChecks(editorView)
@@ -125,6 +168,7 @@ enum SelfTest {
                 out["palette"] = paletteChecks(wc)
                 if let editorView = findEditorView(in: window), let session = session {
                     out["wiki"] = wikiChecks(wc, editorView, vault: session.vault.rootURL)
+                    out["tagComplete"] = tagChecks(wc, editorView)
                 }
             }
             if let split = window.contentViewController as? NSSplitViewController,
@@ -159,6 +203,8 @@ enum SelfTest {
                 if let layoutManager = tv.textLayoutManager {
                     layoutManager.ensureLayout(for: layoutManager.documentRange)
                 }
+                editorView.refreshMermaidOverlays()
+                out["snapshotMermaidOverlays"] = editorView.mermaidOverlayCount
                 tv.layoutSubtreeIfNeeded()
                 if let rep = tv.bitmapImageRepForCachingDisplay(in: tv.bounds) {
                     tv.cacheDisplay(in: tv.bounds, to: rep)
@@ -587,6 +633,43 @@ enum SelfTest {
         result["completionVisible"] = editorView.isWikiCompletionActive
         key("\r", keyCode: 36)
         result["afterCompletion"] = tv.string
+        return result
+    }
+
+    /// #tag autocompletion end to end: a bare "#" pops the latest tags, a
+    /// partial query narrows them, Return inserts the tag plus a closing space.
+    private static func tagChecks(
+        _ wc: MainWindowController,
+        _ editorView: MarkdownEditorView
+    ) -> [String: Any] {
+        var result: [String: Any] = [:]
+        let tv = editorView.textView
+        guard let tag = (try? wc.session.index?.allTags())??.first?.name else {
+            return ["error": "no tags in vault"]
+        }
+
+        editorView.onTextChange = nil // keep the scratch edit off disk
+        editorView.load(text: "start ")
+        tv.setSelectedRange(NSRange(location: 6, length: 0))
+        func key(_ ch: String, keyCode: UInt16 = 0) {
+            guard let event = NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: [],
+                timestamp: 0, windowNumber: tv.window?.windowNumber ?? 0, context: nil,
+                characters: ch, charactersIgnoringModifiers: ch,
+                isARepeat: false, keyCode: keyCode
+            ) else { return }
+            tv.keyDown(with: event)
+        }
+        key("i") // vim → insert mode
+        tv.insertText("#", replacementRange: tv.selectedRange())
+        result["bareHashPops"] = editorView.isWikiCompletionActive
+        tv.insertText(String(tag.prefix(2)), replacementRange: tv.selectedRange())
+        result["queryPops"] = editorView.isWikiCompletionActive
+        key("\r", keyCode: 36)
+        result["afterCompletion"] = tv.string
+        result["insertedTopTag"] = tv.string.contains("#\(tag) ")
+        result["popupClosed"] = !editorView.isWikiCompletionActive
+        editorView.load(text: "restored\n")
         return result
     }
 

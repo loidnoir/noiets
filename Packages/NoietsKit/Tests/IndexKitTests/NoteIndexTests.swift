@@ -115,6 +115,35 @@ private func put(
         #expect(try index.notes(withTag: "vim").map(\.relPath) == ["a.md"])
     }
 
+    @Test func suggestTagsMatchesPrefixFirstThenUsage() throws {
+        let index = try makeIndex()
+        try put(index, "a.md", "#work and #network", mtime: 1)
+        try put(index, "b.md", "more #work", mtime: 2)
+        try put(index, "c.md", "#workshop", mtime: 3)
+        let suggestions = try index.suggestTags(matching: "work")
+        // Prefix matches ranked by usage (work ×2, workshop ×1), then contains.
+        #expect(suggestions == ["work", "workshop", "network"])
+        #expect(try index.suggestTags(matching: "WORK").first == "work")
+        #expect(try index.suggestTags(matching: "zzz").isEmpty)
+    }
+
+    @Test func suggestTagsEmptyQueryReturnsLatest() throws {
+        let index = try makeIndex()
+        try put(index, "old.md", "#ancient", mtime: 1)
+        try put(index, "mid.md", "#middle", mtime: 2)
+        try put(index, "new.md", "#recent", mtime: 3)
+        #expect(try index.suggestTags(matching: "") == ["recent", "middle", "ancient"])
+        #expect(try index.suggestTags(matching: "", limit: 2) == ["recent", "middle"])
+    }
+
+    @Test func suggestTagsEscapesLikeWildcards() throws {
+        let index = try makeIndex()
+        try put(index, "a.md", "#under_score")
+        try put(index, "b.md", "#underXscore")
+        // `_` must match literally, not as the LIKE single-char wildcard.
+        #expect(try index.suggestTags(matching: "under_") == ["under_score"])
+    }
+
     @Test func upsertIsIdempotentAndUpdates() throws {
         let index = try makeIndex()
         try put(index, "a.md", "# One\nfirst", mtime: 1)

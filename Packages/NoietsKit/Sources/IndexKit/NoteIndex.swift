@@ -446,6 +446,38 @@ public final class NoteIndex: Sendable {
         }
     }
 
+    /// Tag completion while typing `#…`. A non-empty query matches by
+    /// substring with prefix matches ranked first, then by usage. An empty
+    /// query (bare `#`) returns the most recently touched tags instead.
+    public func suggestTags(matching query: String, limit: Int = 8) throws -> [String] {
+        try pool.read { db in
+            let rows: [Row]
+            if query.isEmpty {
+                rows = try Row.fetchAll(db, sql: """
+                    SELECT t.name AS name, MAX(n.mtime) AS latest
+                    FROM tag t
+                    JOIN note_tag nt ON nt.tagId = t.id
+                    JOIN note n ON n.id = nt.noteId
+                    GROUP BY t.id ORDER BY latest DESC, t.name LIMIT ?
+                    """, arguments: [limit])
+            } else {
+                // `_` is a LIKE wildcard and legal in tag names — escape it.
+                let escaped = query.lowercased()
+                    .replacingOccurrences(of: "\\", with: "\\\\")
+                    .replacingOccurrences(of: "%", with: "\\%")
+                    .replacingOccurrences(of: "_", with: "\\_")
+                rows = try Row.fetchAll(db, sql: """
+                    SELECT t.name AS name, COUNT(nt.noteId) AS cnt,
+                           (t.name LIKE ? ESCAPE '\\') AS isPrefix
+                    FROM tag t JOIN note_tag nt ON nt.tagId = t.id
+                    WHERE t.name LIKE ? ESCAPE '\\'
+                    GROUP BY t.id ORDER BY isPrefix DESC, cnt DESC, t.name LIMIT ?
+                    """, arguments: ["\(escaped)%", "%\(escaped)%", limit])
+            }
+            return rows.map { $0["name"] }
+        }
+    }
+
     public func notes(withTag tag: String) throws -> [NoteRow] {
         try pool.read { db in
             try NoteRow.fetchAll(db, sql: """

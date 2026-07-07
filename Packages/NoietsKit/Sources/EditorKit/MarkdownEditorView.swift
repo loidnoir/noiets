@@ -1,4 +1,5 @@
 import AppKit
+import RenderKit
 import VimKit
 
 /// The complete markdown editing surface: scroll view + TextKit 2 text view,
@@ -62,6 +63,9 @@ public final class MarkdownEditorView: NSView {
     public var onOpenImageFile: ((URL) -> Void)?
     /// Titles/stems for [[ autocompletion, filtered by the partial query.
     public var wikiCompletionProvider: ((String) -> [String])?
+    /// Tag names for # autocompletion, filtered by the partial query
+    /// (empty query = bare `#` — the provider decides what to surface).
+    public var tagCompletionProvider: ((String) -> [String])?
 
     let autocomplete = WikiLinkAutocomplete()
 
@@ -112,6 +116,11 @@ public final class MarkdownEditorView: NSView {
             guard let layoutManager = self?.textView.textLayoutManager else { return }
             layoutManager.invalidateLayout(for: layoutManager.documentRange)
         }
+        // …and so do async mermaid diagram renders.
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(mermaidDidRender(_:)),
+            name: .mermaidDidRender, object: nil
+        )
         textView.onPasteImage = { [weak self] in
             self?.pasteImageFromClipboard() ?? false
         }
@@ -320,6 +329,65 @@ public final class MarkdownEditorView: NSView {
     /// wrapping, window resize) re-places the block.
     @objc private func textGeometryChanged(_ note: Notification) {
         placeBlockCaret()
+        refreshMermaidOverlays()
+    }
+
+    @objc private func mermaidDidRender(_ note: Notification) {
+        guard let layoutManager = textView.textLayoutManager else { return }
+        layoutManager.invalidateLayout(for: layoutManager.documentRange)
+        // Fragment frames settle after the invalidation's layout pass.
+        DispatchQueue.main.async { [weak self] in
+            self?.refreshMermaidOverlays()
+        }
+    }
+
+    // MARK: Mermaid canvas overlays
+    // Rendered diagrams are interactive (pan/zoom) — fragments only reserve
+    // the area; a real view per visible block sits on top and scrolls with
+    // the text. Re-synced on any event that can move or invalidate blocks.
+
+    private var mermaidOverlays: [MermaidCanvasView] = []
+
+    /// Test/diagnostic hook.
+    public var mermaidOverlayCount: Int { mermaidOverlays.count }
+
+    public func refreshMermaidOverlays() {
+        guard let controller = layoutController,
+              let layoutManager = textView.textLayoutManager,
+              let contentStorage = textView.textContentStorage else { return }
+        let blocks = controller.mermaidDisplayBlocks()
+
+        while mermaidOverlays.count > blocks.count {
+            mermaidOverlays.removeLast().removeFromSuperview()
+        }
+        while mermaidOverlays.count < blocks.count {
+            let overlay = MermaidCanvasView(theme: theme)
+            textView.addSubview(overlay)
+            mermaidOverlays.append(overlay)
+        }
+
+        for (overlay, block) in zip(mermaidOverlays, blocks) {
+            overlay.setImage(block.image, sourceKey: block.source)
+            overlay.onEdit = { [weak self] in
+                guard let self else { return }
+                self.textView.setSelectedRange(NSRange(location: block.fenceContentEnd, length: 0))
+                self.window?.makeFirstResponder(self.textView)
+            }
+            let start = contentStorage.documentRange.location
+            guard let location = contentStorage.location(start, offsetBy: block.fenceLocation),
+                  let fragment = layoutManager.textLayoutFragment(for: location) else {
+                overlay.frame = .zero
+                continue
+            }
+            let pad = textView.textContainer?.lineFragmentPadding ?? 5
+            let width = textView.textContainer?.size.width ?? textView.bounds.width
+            let origin = textView.textContainerOrigin
+            let area = fragment.layoutFragmentFrame
+            overlay.frame = CGRect(x: origin.x + pad,
+                                   y: origin.y + area.minY + 8,
+                                   width: width - pad * 2,
+                                   height: max(area.height - 16, 0))
+        }
     }
 
     /// macOS 14+ draws the caret with NSTextInsertionIndicator (nested
@@ -500,18 +568,23 @@ public final class MarkdownEditorView: NSView {
         if let layoutManager = textView.textLayoutManager {
             layoutManager.invalidateLayout(for: layoutManager.documentRange)
         }
+        refreshMermaidOverlays()
     }
 
     public func load(text: String) {
         autocomplete.hide()
         vim.reset()
+        mermaidOverlays.forEach { $0.removeFromSuperview() }
+        mermaidOverlays.removeAll()
         textView.string = text // triggers didProcessEditing → full style pass
         textView.undoManager?.removeAllActions()
         textView.setSelectedRange(NSRange(location: 0, length: 0))
         // Defer past TextKit 2's initial viewport height estimation — an
-        // immediate scroll drifts once the estimate settles.
+        // immediate scroll drifts once the estimate settles (and lets the
+        // first layout pass place any mermaid canvases).
         DispatchQueue.main.async { [weak self] in
             self?.textView.scrollRangeToVisible(NSRange(location: 0, length: 0))
+            self?.refreshMermaidOverlays()
         }
     }
 
@@ -544,8 +617,9 @@ final class CaretBlockView: NSView {
 extension MarkdownEditorView: NSTextViewDelegate {
     public func textDidChange(_ notification: Notification) {
         onTextChange?()
-        refreshWikiAutocomplete()
+        refreshAutocomplete()
         refreshCaretShape()
+        refreshMermaidOverlays()
         lineNumberGutter?.recomputeLines()
     }
 
@@ -643,22 +717,34 @@ extension MarkdownEditorView: NSTextViewDelegate {
         return nil
     }
 
-    private func refreshWikiAutocomplete() {
-        guard let window = textView.window,
-              let provider = wikiCompletionProvider,
-              let context = wikiQueryContext() else {
+    private func refreshAutocomplete() {
+        guard let window = textView.window else {
             autocomplete.hide()
             return
         }
-        let suggestions = provider(context.query)
+        if let provider = wikiCompletionProvider, let context = wikiQueryContext() {
+            show(suggestions: provider(context.query), in: window) { [weak self] picked in
+                self?.insertWikiCompletion(picked)
+            }
+            return
+        }
+        if let provider = tagCompletionProvider, let context = tagQueryContext() {
+            // Rendered with their # so the popup reads as tags, stripped on pick.
+            show(suggestions: provider(context.query).map { "#" + $0 }, in: window) { [weak self] picked in
+                self?.insertTagCompletion(String(picked.dropFirst()))
+            }
+            return
+        }
+        autocomplete.hide()
+    }
+
+    private func show(suggestions: [String], in window: NSWindow, onPick: @escaping (String) -> Void) {
         guard !suggestions.isEmpty else {
             autocomplete.hide()
             return
         }
         let caretRect = textView.firstRect(forCharacterRange: textView.selectedRange(), actualRange: nil)
-        autocomplete.show(suggestions: suggestions, at: caretRect, parent: window) { [weak self] picked in
-            self?.insertWikiCompletion(picked)
-        }
+        autocomplete.show(suggestions: suggestions, at: caretRect, parent: window, onPick: onPick)
     }
 
     private func insertWikiCompletion(_ target: String) {
@@ -666,7 +752,7 @@ extension MarkdownEditorView: NSTextViewDelegate {
         let text = textView.string as NSString
         // Replace the partial query (and consume an existing "]]" right after
         // the caret if the tokenizer auto-close ever adds one).
-        var replaceRange = context.queryRange
+        let replaceRange = context.queryRange
         var insert = target
         let after = replaceRange.location + replaceRange.length
         if after + 2 <= text.length, text.substring(with: NSRange(location: after, length: 2)) == "]]" {
@@ -683,10 +769,58 @@ extension MarkdownEditorView: NSTextViewDelegate {
         autocomplete.hide()
     }
 
+    // MARK: # tag autocompletion
+
+    /// Detects "#partial" (possibly a bare "#") immediately before the caret,
+    /// mirroring the tokenizer's tag shape: `#` at line start or after
+    /// whitespace, followed only by tag characters.
+    private func tagQueryContext() -> (query: String, queryRange: NSRange)? {
+        let text = textView.string as NSString
+        let selection = textView.selectedRange()
+        let caret = selection.location
+        guard selection.length == 0, caret > 0, caret <= text.length else { return nil }
+
+        func isTagChar(_ c: unichar) -> Bool {
+            (c >= unichar(UInt8(ascii: "0")) && c <= unichar(UInt8(ascii: "9")))
+                || (c >= unichar(UInt8(ascii: "a")) && c <= unichar(UInt8(ascii: "z")))
+                || (c >= unichar(UInt8(ascii: "A")) && c <= unichar(UInt8(ascii: "Z")))
+                || c > 0x7F
+                || c == unichar(UInt8(ascii: "_"))
+                || c == unichar(UInt8(ascii: "-"))
+                || c == unichar(UInt8(ascii: "/"))
+        }
+        var i = caret - 1
+        while i >= 0, isTagChar(text.character(at: i)) { i -= 1 }
+        guard i >= 0, text.character(at: i) == unichar(UInt8(ascii: "#")) else { return nil }
+        if i > 0 {
+            let prev = text.character(at: i - 1)
+            let precededBySpace = prev == unichar(UInt8(ascii: " ")) || prev == 0x09
+                || prev == 0x0A || prev == 0x0D
+            guard precededBySpace else { return nil }
+        }
+        let queryStart = i + 1
+        let queryRange = NSRange(location: queryStart, length: caret - queryStart)
+        return (text.substring(with: queryRange), queryRange)
+    }
+
+    private func insertTagCompletion(_ name: String) {
+        guard let context = tagQueryContext() else { return }
+        // Trailing space closes the tag — otherwise the caret would still sit
+        // in a tag context and the popup would immediately reopen.
+        let insert = name + " "
+        if textView.shouldChangeText(in: context.queryRange, replacementString: insert) {
+            textView.textStorage?.replaceCharacters(in: context.queryRange, with: insert)
+            textView.didChangeText()
+            let newCaret = context.queryRange.location + (insert as NSString).length
+            textView.setSelectedRange(NSRange(location: newCaret, length: 0))
+        }
+        autocomplete.hide()
+    }
+
     // MARK: Live Preview — active paragraph tracking
 
     public func textViewDidChangeSelection(_ notification: Notification) {
-        if autocomplete.isActive, wikiQueryContext() == nil {
+        if autocomplete.isActive, wikiQueryContext() == nil, tagQueryContext() == nil {
             autocomplete.hide()
         }
         guard let storage = textView.textStorage else { return }
@@ -704,6 +838,8 @@ extension MarkdownEditorView: NSTextViewDelegate {
               ))
         highlighter.updateActiveParagraph(storage, to: paragraph)
         refreshCaretShape()
+        // Entering/leaving a mermaid block flips it between canvas and source.
+        refreshMermaidOverlays()
     }
 
     // MARK: Live Preview — caret skips collapsed markup

@@ -15,13 +15,16 @@ final class CodeBandFragment: NSTextLayoutFragment {
     private let theme: EditorTheme
     private let roundTop: Bool
     private let roundBottom: Bool
+    /// Right-aligned note on the line (mermaid render errors).
+    private let badge: String?
     private let radius: CGFloat = 4 // matches the inline-code chips
 
     init(textElement: NSTextElement, range: NSTextRange?, theme: EditorTheme,
-         roundTop: Bool = false, roundBottom: Bool = false) {
+         roundTop: Bool = false, roundBottom: Bool = false, badge: String? = nil) {
         self.theme = theme
         self.roundTop = roundTop
         self.roundBottom = roundBottom
+        self.badge = badge
         super.init(textElement: textElement, range: range)
     }
 
@@ -63,6 +66,22 @@ final class CodeBandFragment: NSTextLayoutFragment {
         }
         context.restoreGState()
         super.draw(at: point, in: context)
+
+        if let badge {
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: theme.baseFontSize - 3),
+                .foregroundColor: NSColor.systemRed.withAlphaComponent(0.85),
+            ]
+            let text = badge as NSString
+            let size = text.size(withAttributes: attrs)
+            let band = bandRect.offsetBy(dx: point.x, dy: point.y)
+            text.draw(at: NSPoint(x: band.maxX - size.width - 10,
+                                  y: band.minY + (roundTop ? 6 : 3)),
+                      withAttributes: attrs)
+            NSGraphicsContext.restoreGraphicsState()
+        }
     }
 }
 
@@ -72,13 +91,15 @@ final class ImageLineFragment: NSTextLayoutFragment {
     private let theme: EditorTheme
     private let image: NSImage
     private let isMath: Bool
+    private let maxSize: CGSize?
     private let padding: CGFloat = 8
 
     init(textElement: NSTextElement, range: NSTextRange?, theme: EditorTheme,
-         image: NSImage, isMath: Bool = false) {
+         image: NSImage, isMath: Bool = false, maxSize: CGSize? = nil) {
         self.theme = theme
         self.image = image
         self.isMath = isMath
+        self.maxSize = maxSize
         super.init(textElement: textElement, range: range)
     }
 
@@ -88,8 +109,8 @@ final class ImageLineFragment: NSTextLayoutFragment {
     private var drawSize: CGSize {
         let natural = image.size
         guard natural.width > 0, natural.height > 0 else { return .zero }
-        let maxWidth: CGFloat = isMath ? 640 : 560
-        let maxHeight: CGFloat = isMath ? 200 : 420
+        let maxWidth: CGFloat = maxSize?.width ?? (isMath ? 640 : 560)
+        let maxHeight: CGFloat = maxSize?.height ?? (isMath ? 200 : 420)
         let scale = min(1, min(maxWidth / natural.width, maxHeight / natural.height))
         return CGSize(width: natural.width * scale, height: natural.height * scale)
     }
@@ -270,6 +291,49 @@ final class RuleFragment: NSTextLayoutFragment {
         context.setFillColor(theme.mutedColor.withAlphaComponent(0.35).cgColor)
         context.fill(CGRect(x: point.x, y: point.y + 12, width: columnWidth, height: 1))
         context.restoreGState()
+    }
+}
+
+/// Reserves the interactive mermaid canvas area. It draws nothing itself —
+/// the editor keeps a MermaidCanvasView overlay positioned over this frame
+/// (fragments are plain CoreGraphics, so pan/zoom needs a real view).
+final class MermaidAreaFragment: NSTextLayoutFragment {
+    /// Diagram height/width; the area follows it within sane bounds.
+    private let aspect: CGFloat
+
+    init(textElement: NSTextElement, range: NSTextRange?, aspect: CGFloat) {
+        self.aspect = aspect
+        super.init(textElement: textElement, range: range)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override var layoutFragmentFrame: CGRect {
+        var frame = super.layoutFragmentFrame
+        let pad = textLayoutManager?.textContainer?.lineFragmentPadding ?? 5
+        let width = columnWidth - pad * 2
+        frame.size.height = min(max(width * aspect, 220), 540) + 16
+        return frame
+    }
+
+    override func draw(at point: CGPoint, in context: CGContext) {
+        // Intentionally empty — the overlay view draws the diagram.
+    }
+}
+
+/// Fully hidden line — the body of a rendered ```mermaid block. Unlike the
+/// 4pt table-delimiter gap, these blocks can be dozens of lines, so any
+/// per-line height would pile up into a visible hole under the diagram.
+final class CollapsedLineFragment: NSTextLayoutFragment {
+    override var layoutFragmentFrame: CGRect {
+        var frame = super.layoutFragmentFrame
+        frame.size.height = 0
+        return frame
+    }
+
+    override func draw(at point: CGPoint, in context: CGContext) {
+        // Intentionally empty.
     }
 }
 

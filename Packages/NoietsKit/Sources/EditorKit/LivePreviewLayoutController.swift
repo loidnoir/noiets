@@ -25,8 +25,10 @@ public final class LivePreviewLayoutController: NSObject {
 
     private enum LineRole {
         case plain
-        case code(roundTop: Bool, roundBottom: Bool)
+        case code(roundTop: Bool, roundBottom: Bool, badge: String? = nil)
         case image(path: String)
+        case mermaid(image: NSImage)
+        case collapsed
         case math(latex: String)
         case overlays(spans: [OverlayLineFragment.Span])
         case tableRow(cells: [String], isHeader: Bool, columns: [CGFloat])
@@ -54,6 +56,31 @@ public final class LivePreviewLayoutController: NSObject {
 
         switch line.kind {
         case .code, .fenceDelimiter:
+            // A ```mermaid block whose lines are all inactive renders as a
+            // diagram: the opening fence carries the image, the rest collapse.
+            // While the caret is inside (or the render is pending) the block
+            // stays raw source with the usual band; a failed render keeps the
+            // band too but badges the fence line with mermaid's error.
+            var badge: String?
+            if let mermaid = mermaidBlock(around: lineIndex, scan: scan, text: text) {
+                if let image = MermaidRenderer.shared.image(
+                    source: mermaid.source,
+                    background: theme.background,
+                    fontSize: theme.baseFontSize
+                ) {
+                    return lineIndex == mermaid.first
+                        ? .mermaid(image: image)
+                        : .collapsed // hide content + closing fence entirely
+                }
+                if lineIndex == mermaid.first,
+                   let reason = MermaidRenderer.shared.failureReason(
+                       source: mermaid.source,
+                       background: theme.background,
+                       fontSize: theme.baseFontSize
+                   ) {
+                    badge = "⚠︎ " + (reason.components(separatedBy: "\n").first ?? reason)
+                }
+            }
             // Band always (even while editing); the block's outer lines
             // round their corners.
             func isCode(_ i: Int) -> Bool {
@@ -63,7 +90,8 @@ public final class LivePreviewLayoutController: NSObject {
                 }
             }
             return .code(roundTop: lineIndex == 0 || !isCode(lineIndex - 1),
-                         roundBottom: lineIndex == scan.lines.count - 1 || !isCode(lineIndex + 1))
+                         roundBottom: lineIndex == scan.lines.count - 1 || !isCode(lineIndex + 1),
+                         badge: badge)
         case .blockquote:
             return .quote
         case .horizontalRule where !active:
@@ -148,6 +176,104 @@ public final class LivePreviewLayoutController: NSObject {
         default:
             return .plain
         }
+    }
+
+    /// The ```mermaid block containing `lineIndex`, unless any of its lines
+    /// is active (caret inside → the whole block reverts to raw source).
+    private func mermaidBlock(
+        around lineIndex: Int, scan: BlockScan, text: NSString
+    ) -> (first: Int, last: Int, source: String)? {
+        func language(of i: Int) -> String? {
+            switch scan.lines[i].kind {
+            case .fenceDelimiter(let lang), .code(let lang): return lang
+            default: return nil
+            }
+        }
+        // Walk up to the opening fence. A closing fence reports language nil —
+        // step past it onto the block body first.
+        var first = lineIndex
+        if case .fenceDelimiter(let lang) = scan.lines[first].kind, lang == nil, first > 0 {
+            first -= 1
+        }
+        while first > 0, case .code = scan.lines[first].kind { first -= 1 }
+        guard case .fenceDelimiter(let lang) = scan.lines[first].kind,
+              lang?.lowercased() == "mermaid" else { return nil }
+
+        // Walk down over the body to the closing fence (if present).
+        var last = first
+        while last < scan.lines.count - 1, case .code = scan.lines[last + 1].kind {
+            last += 1
+        }
+        let bodyEnd = last
+        if last < scan.lines.count - 1,
+           case .fenceDelimiter(nil) = scan.lines[last + 1].kind {
+            last += 1
+        }
+        guard bodyEnd > first else { return nil } // empty block
+
+        let blockRange = NSRange(
+            location: scan.lines[first].range.location,
+            length: scan.lines[last].range.location + scan.lines[last].range.length
+                - scan.lines[first].range.location
+        )
+        let blockActive = highlighter.map { h in
+            !h.alwaysPreview && (
+                NSIntersectionRange(blockRange, h.activeParagraphRange).length > 0
+                    || (h.activeParagraphRange.length == 0
+                        && h.activeParagraphRange.location >= blockRange.location
+                        && h.activeParagraphRange.location <= blockRange.location + blockRange.length)
+                    || !h.livePreviewEnabled
+            )
+        } ?? true
+        guard !blockActive else { return nil }
+
+        let source = (first + 1...bodyEnd)
+            .map { text.substring(with: scan.lines[$0].contentRange) }
+            .joined(separator: "\n")
+        guard !source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return (first, last, source)
+    }
+
+    /// A rendered-and-displayable mermaid block, for the editor's canvas
+    /// overlays: inactive, non-empty, image already in the render cache.
+    public struct MermaidDisplayBlock {
+        /// Character index of the opening fence line's start — anchors the
+        /// overlay to that line's (area-sized) layout fragment.
+        public let fenceLocation: Int
+        /// Caret target for the Edit action (end of "```mermaid").
+        public let fenceContentEnd: Int
+        public let source: String
+        public let image: NSImage
+    }
+
+    public func mermaidDisplayBlocks() -> [MermaidDisplayBlock] {
+        guard let scan = highlighter?.currentScan,
+              let storage = contentStorage?.textStorage else { return [] }
+        let text = storage.string as NSString
+        var blocks: [MermaidDisplayBlock] = []
+        var i = 0
+        while i < scan.lines.count {
+            if case .fenceDelimiter(let lang) = scan.lines[i].kind,
+               lang?.lowercased() == "mermaid",
+               let block = mermaidBlock(around: i, scan: scan, text: text),
+               let image = MermaidRenderer.shared.image(
+                   source: block.source,
+                   background: theme.background,
+                   fontSize: theme.baseFontSize
+               ) {
+                let fence = scan.lines[block.first]
+                blocks.append(MermaidDisplayBlock(
+                    fenceLocation: fence.range.location,
+                    fenceContentEnd: fence.contentRange.location + fence.contentRange.length,
+                    source: block.source,
+                    image: image
+                ))
+                i = block.last + 1
+            } else {
+                i += 1
+            }
+        }
+        return blocks
     }
 
     /// Marker-content-marker runs of a line — inline math and inline-code
@@ -251,15 +377,18 @@ extension LivePreviewLayoutController: @preconcurrency NSTextLayoutManagerDelega
         switch role(forLineAt: charIndex, text: text) {
         case .plain:
             return standard
-        case .code(let roundTop, let roundBottom):
+        case .code(let roundTop, let roundBottom, let badge):
             return CodeBandFragment(textElement: textElement, range: elementRange, theme: theme,
-                                    roundTop: roundTop, roundBottom: roundBottom)
+                                    roundTop: roundTop, roundBottom: roundBottom, badge: badge)
         case .image(let path):
             if let image = imageProvider.image(forPath: path) {
                 return ImageLineFragment(textElement: textElement, range: elementRange,
                                          theme: theme, image: image)
             }
             return standard
+        case .mermaid(let image):
+            return MermaidAreaFragment(textElement: textElement, range: elementRange,
+                                       aspect: image.size.height / max(image.size.width, 1))
         case .math(let latex):
             if let image = MathRenderer.image(latex: latex, fontSize: theme.baseFontSize + 3,
                                               textColor: theme.textColor) {
@@ -275,6 +404,8 @@ extension LivePreviewLayoutController: @preconcurrency NSTextLayoutManagerDelega
                                     cells: cells, isHeader: isHeader, columns: columns)
         case .tableDelimiter:
             return TableDelimiterFragment(textElement: textElement, range: elementRange, theme: theme)
+        case .collapsed:
+            return CollapsedLineFragment(textElement: textElement, range: elementRange)
         case .quote:
             return QuoteBarFragment(textElement: textElement, range: elementRange, theme: theme)
         case .rule:

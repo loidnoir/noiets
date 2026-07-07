@@ -25,7 +25,7 @@ let package = Package(
         .target(name: "RenderKit", dependencies: [
             "SharedModel",
             .product(name: "SwiftMath", package: "SwiftMath"),
-        ]),
+        ], resources: [.copy("Resources/mermaid.min.js")]),
         .target(name: "IndexKit", dependencies: [
             "SharedModel", "VaultStore", "MarkdownKit",
             .product(name: "GRDB", package: "GRDB.swift"),

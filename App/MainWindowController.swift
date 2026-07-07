@@ -125,6 +125,10 @@ final class MainWindowController: NSWindowController {
             let rows = (try? index.quickOpen(query, limit: 8)) ?? []
             return rows.map(\.title)
         }
+        editorVC.editor.tagCompletionProvider = { [weak self] query in
+            guard let index = self?.session.index else { return [] }
+            return (try? index.suggestTags(matching: query, limit: 8)) ?? []
+        }
         editorVC.onEdited = { [weak self] text in
             self?.inspectorVC.noteEdited(text: text)
         }
