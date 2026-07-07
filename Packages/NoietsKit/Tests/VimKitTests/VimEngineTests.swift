@@ -482,6 +482,35 @@ private func type(_ engine: VimEngine, _ target: MockTarget, _ text: String) {
 }
 
 @MainActor
+@Suite struct PasteTests {
+    @Test func pPastesRegisterAndReadsHostClipboardBack() {
+        let (e, t) = makeEngine("one\ntwo\n", caret: 0)
+        var clipboard: String?
+        e.onYank = { clipboard = $0 } // mirror out, like the editor wiring
+        e.pasteboardText = { clipboard }
+
+        send(e, "yy")
+        send(e, "p") // register == clipboard → linewise register paste
+        #expect(t.buffer as String == "one\none\ntwo\n")
+
+        clipboard = "X" // copied in another app → charwise external paste
+        send(e, "p")
+        #expect((t.buffer as String).contains("oXne"))
+
+        clipboard = "Z\n" // trailing newline → linewise external paste
+        send(e, "p")
+        #expect((t.buffer as String).contains("\nZ\n"))
+    }
+
+    @Test func bigPPastesBeforeCaretLine() {
+        let (e, t) = makeEngine("one\ntwo\n", caret: 0)
+        e.pasteboardText = { "zero\n" }
+        send(e, "P")
+        #expect(t.buffer as String == "zero\none\ntwo\n")
+    }
+}
+
+@MainActor
 @Suite struct SearchCounterTests {
     @Test func starShowsMatchIndexAndCount() {
         let (e, t) = makeEngine("foo bar\nfoo baz\nfoo", caret: 0) // engine holds t weakly

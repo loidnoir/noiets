@@ -145,6 +145,27 @@ enum SelfTest {
             } else {
                 out["sidebarRows"] = -1
             }
+            // NOIETS_EDITOR_SNAPSHOT=<png> [+ NOIETS_EDITOR_SNAPSHOT_DOC=<md>]:
+            // renders the text view itself to PNG (window snapshots miss the
+            // TextKit 2 surface), for eyeballing live-preview rendering.
+            if let path = ProcessInfo.processInfo.environment["NOIETS_EDITOR_SNAPSHOT"],
+               !path.isEmpty, let editorView = findEditorView(in: window) {
+                if let doc = ProcessInfo.processInfo.environment["NOIETS_EDITOR_SNAPSHOT_DOC"],
+                   let text = try? String(contentsOfFile: doc, encoding: .utf8) {
+                    editorView.onTextChange = nil
+                    editorView.load(text: text)
+                }
+                let tv = editorView.textView
+                if let layoutManager = tv.textLayoutManager {
+                    layoutManager.ensureLayout(for: layoutManager.documentRange)
+                }
+                tv.layoutSubtreeIfNeeded()
+                if let rep = tv.bitmapImageRepForCachingDisplay(in: tv.bounds) {
+                    tv.cacheDisplay(in: tv.bounds, to: rep)
+                    try? rep.representation(using: .png, properties: [:])?
+                        .write(to: URL(fileURLWithPath: path))
+                }
+            }
         }
 
         let data = (try? JSONSerialization.data(withJSONObject: out, options: [.sortedKeys])) ?? Data()

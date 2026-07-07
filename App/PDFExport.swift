@@ -72,9 +72,14 @@ final class PDFExport: NSObject, WKNavigationDelegate {
                     contextInfo: nil)
     }
 
-    @objc private func printOperationDidRun(_: NSPrintOperation, success: Bool,
-                                            contextInfo _: UnsafeMutableRawPointer?) {
-        finish(success: success)
+    // NSPrintOperation delivers this on a background thread — hop back to
+    // the main actor instead of trapping its executor assertion.
+    @objc nonisolated private func printOperationDidRun(
+        _: NSPrintOperation, success: Bool, contextInfo _: UnsafeMutableRawPointer?
+    ) {
+        Task { @MainActor in
+            self.finish(success: success)
+        }
     }
 
     private func finish(success: Bool) {

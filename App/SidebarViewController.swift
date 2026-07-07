@@ -258,6 +258,11 @@ final class SidebarViewController: NSViewController {
         }
     }
 
+    /// The tree cursor's pill rect in window coordinates (pane-jump smears).
+    var cursorWindowRect: NSRect? {
+        outlineView.cursorWindowRect
+    }
+
     func selectedNodeURL() -> URL? {
         guard outlineView.selectedRow >= 0,
             let item = outlineView.item(atRow: outlineView.selectedRow) as? Item
@@ -420,6 +425,7 @@ final class SidebarViewController: NSViewController {
             } else if outlineView.selectedRow >= 0 {
                 treeVisualAnchor = outlineView.selectedRow
                 treeVisualCursor = outlineView.selectedRow
+                outlineView.visualRangeActive = true  // pill stretches over the range
                 applyTreeVisualSelection()
                 setVimStatus("TREE VISUAL")
             }
@@ -476,6 +482,7 @@ final class SidebarViewController: NSViewController {
     private func exitTreeVisual() {
         guard isTreeVisual else { return }
         treeVisualAnchor = nil
+        outlineView.visualRangeActive = false  // pill shrinks back to one row
         setVimStatus("TREE")
         let cursor = min(max(treeVisualCursor, 0), max(outlineView.numberOfRows - 1, 0))
         suppressSelectionCallback = true
@@ -617,7 +624,7 @@ final class SidebarViewController: NSViewController {
         switch item.kind {
         case .node(let node) where node.isFolder:
             if !outlineView.isItemExpanded(item), !item.children.isEmpty {
-                outlineView.expandItem(item)
+                animateTreeChange { outlineView.expandItem(item) }
             }
         default:
             activateSelectedRow()
@@ -627,7 +634,7 @@ final class SidebarViewController: NSViewController {
     private func collapseOrParentSelected() {
         guard let item = selectedItem, let node = item.fileNode else { return }
         if node.isFolder, outlineView.isItemExpanded(item) {
-            outlineView.collapseItem(item)
+            animateTreeChange { outlineView.collapseItem(item) }
             return
         }
         // Jump to the parent folder row.
@@ -812,12 +819,7 @@ final class SidebarViewController: NSViewController {
                                       image: AppIcons.folder(size: 14)) {
                         guard let self else { return }
                         self.exitTreeVisual()
-                        var lastMoved: URL?
-                        for source in sources {
-                            if let moved = self.session.moveItem(at: source, into: folder.url) {
-                                lastMoved = moved
-                            }
-                        }
+                        let lastMoved = self.session.moveItems(sources, into: folder.url).last
                         if let lastMoved {
                             self.expandedURLs.insert(folder.url)
                             self.select(url: lastMoved, notify: false)
@@ -852,12 +854,28 @@ final class SidebarViewController: NSViewController {
     }
 
     private func toggle(_ item: Item) {
-        // Plain calls — the animator() proxy silently swallows expand/collapse,
-        // and NSOutlineView animates these implicitly anyway.
         if outlineView.isItemExpanded(item) {
-            outlineView.collapseItem(item)
+            animateTreeChange { outlineView.collapseItem(item) }
         } else {
-            outlineView.expandItem(item)
+            animateTreeChange { outlineView.expandItem(item) }
+        }
+    }
+
+    /// Runs an expand/collapse with a visible slide. Direct calls inside an
+    /// implicit-animation group — NOT the animator() proxy, which silently
+    /// swallows expand/collapse — so the model state always changes; only
+    /// the row shifts (and the selection pill riding along) animate.
+    private func animateTreeChange(_ changes: () -> Void) {
+        guard UIAnimation.enabled else {
+            changes()
+            return
+        }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.2
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            context.allowsImplicitAnimation = true
+            changes()
+            outlineView.layoutSubtreeIfNeeded()
         }
     }
 
@@ -961,13 +979,13 @@ extension SidebarViewController: NSOutlineViewDelegate {
                     title: node.title,
                     isExpanded: outlineView.isItemExpanded(item),
                     isExpandable: !item.children.isEmpty
-                ) { [weak outlineView, weak item] in
-                    guard let outlineView, let item else { return false }
-                    if outlineView.isItemExpanded(item) {
-                        outlineView.collapseItem(item)
+                ) { [weak self, weak item] in
+                    guard let self, let item else { return false }
+                    if self.outlineView.isItemExpanded(item) {
+                        self.animateTreeChange { self.outlineView.collapseItem(item) }
                         return false
                     }
-                    outlineView.expandItem(item)
+                    self.animateTreeChange { self.outlineView.expandItem(item) }
                     return true
                 }
             }
@@ -1048,6 +1066,9 @@ extension SidebarViewController: NSOutlineViewDelegate {
     }
 
     func outlineViewSelectionDidChange(_: Notification) {
+        // Every selection change — clicks, j/k, programmatic — slides the
+        // pill; suppression below only gates the open-note callback.
+        outlineView.refreshSelectionPill(animated: true)
         guard !suppressSelectionCallback,
             let item = outlineView.item(atRow: outlineView.selectedRow) as? Item
         else { return }
@@ -1121,13 +1142,7 @@ extension SidebarViewController {
         guard let sources = draggedURLs(info), !sources.isEmpty else { return false }
         let (_, folder) = dropTarget(for: item)
         expandedURLs.insert(folder)  // reveal where things landed
-        var lastMoved: URL?
-        for source in sources {
-            if let dest = session.moveItem(at: source, into: folder) {
-                lastMoved = dest
-            }
-        }
-        guard let lastMoved else { return false }
+        guard let lastMoved = session.moveItems(sources, into: folder).last else { return false }
         select(url: lastMoved, notify: false)
         return true
     }

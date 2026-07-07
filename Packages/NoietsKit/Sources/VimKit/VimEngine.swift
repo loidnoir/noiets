@@ -23,6 +23,10 @@ public final class VimEngine {
     /// (y/yy, d/dd/D, x, c…) — so the host can mirror it to the clipboard.
     public var onYank: ((String) -> Void)?
 
+    /// Host clipboard read-back for p/P — pastes external copies without an
+    /// explicit vim register (the inbound half of clipboard=unnamed).
+    public var pasteboardText: (() -> String?)?
+
     // Pending command state
     private var count = 0
     private var operatorCount = 0
@@ -742,12 +746,21 @@ public final class VimEngine {
     }
 
     private func paste(after: Bool) {
-        guard let target, !yankText.isEmpty else { count = 0; return }
+        // The inbound half of clipboard=unnamed: when the host clipboard
+        // holds something other than the last yank (copied in another app),
+        // p/P paste that — linewise when it ends in a newline, like vim.
+        var text = yankText
+        var linewise = yankLinewise
+        if let clipboard = pasteboardText?(), !clipboard.isEmpty, clipboard != yankText {
+            text = clipboard
+            linewise = clipboard.hasSuffix("\n")
+        }
+        guard let target, !text.isEmpty else { count = 0; return }
         let t = target.text
         beginChange()
         let times = max(count, 1)
-        var payload = String(repeating: yankText, count: times)
-        if yankLinewise {
+        var payload = String(repeating: text, count: times)
+        if linewise {
             if !payload.hasSuffix("\n") { payload += "\n" }
             let line = Motions.lineRange(t, at: caret)
             var insertAt: Int

@@ -7,6 +7,8 @@ import EditorKit
 /// through the scroll view. ⌃h returns keyboard focus to the tree.
 final class ImageViewerViewController: NSViewController {
     var onFocusSidebar: (() -> Void)?
+    /// Click outside the image (or Esc) → back to the document.
+    var onDismiss: (() -> Void)?
 
     private(set) var currentURL: URL?
     private let imageView = NSImageView()
@@ -40,7 +42,17 @@ final class ImageViewerViewController: NSViewController {
 
         let click = NSClickGestureRecognizer(target: self, action: #selector(imageClicked(_:)))
         imageView.addGestureRecognizer(click)
+        let outside = NSClickGestureRecognizer(target: self, action: #selector(paneClicked(_:)))
+        pane.addGestureRecognizer(outside)
+        pane.onEscape = { [weak self] in self?.onDismiss?() }
         view = pane
+    }
+
+    @objc private func paneClicked(_ gesture: NSClickGestureRecognizer) {
+        // Clicks on the image itself zoom (its own recognizer); anywhere
+        // else in the pane returns to the document.
+        guard !imageView.bounds.contains(gesture.location(in: imageView)) else { return }
+        onDismiss?()
     }
 
     func display(url: URL) {
@@ -107,6 +119,7 @@ private final class CenteringClipView: NSClipView {
 /// content pane reads as one surface.
 private final class ImagePaneView: NSView {
     var onPaneLeft: (() -> Void)?
+    var onEscape: (() -> Void)?
 
     override var acceptsFirstResponder: Bool { true }
 
@@ -116,6 +129,10 @@ private final class ImagePaneView: NSView {
     }
 
     override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53 { // esc → back to the document
+            onEscape?()
+            return
+        }
         if event.modifierFlags.contains(.control),
            let ch = event.charactersIgnoringModifiers,
            ["h", "j", "k"].contains(ch) {

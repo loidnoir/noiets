@@ -65,7 +65,10 @@ final class EditorViewController: NSViewController {
         focusEditor()
     }
 
-    func display(text: String, readOnly: Bool = false) {
+    func display(text: String, readOnly: Bool = false, animated: Bool = false) {
+        if animated, !editor.isHidden {
+            UIAnimation.fadeNextChange(of: view)
+        }
         editor.isHidden = false
         emptyLabel.isHidden = true
         editor.load(text: text)
@@ -78,7 +81,10 @@ final class EditorViewController: NSViewController {
         editor.setLocked(readOnly)
     }
 
-    func displayEmpty() {
+    func displayEmpty(animated: Bool = false) {
+        if animated, !editor.isHidden {
+            UIAnimation.fadeNextChange(of: view)
+        }
         editor.isHidden = true
         emptyLabel.isHidden = false
     }

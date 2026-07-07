@@ -283,18 +283,9 @@ public final class IncrementalHighlighter: NSObject {
         }
 
         for (index, token) in tokens.enumerated() {
-            if case .inlineCodeMarker = token.kind {
-                // Backticks go invisible and shrink to the chip's side
-                // padding; the rounded chip itself is drawn behind the span
-                // by OverlayLineFragment.
-                storage.addAttribute(.foregroundColor, value: NSColor.clear, range: token.range)
-                let advance = ("`" as NSString)
-                    .size(withAttributes: [.font: theme.monoFont]).width
-                storage.addAttribute(.kern,
-                                     value: OverlayLineFragment.chipPadding - advance,
-                                     range: token.range)
-                continue
-            }
+            // Backticks collapse like all hidden markup; the rounded chip
+            // (OverlayLineFragment) hangs into the surrounding whitespace so
+            // the code text itself stays on the shared text column.
             if token.kind.hiddenInPreview {
                 hide(token.range)
                 continue

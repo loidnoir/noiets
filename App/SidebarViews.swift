@@ -29,6 +29,10 @@ final class SoftRowView: NSTableRowView {
         while container != nil, !(container is NSTableView) {
             container = container?.superview
         }
+        // Single selections in the tree are drawn by the sliding pill instead.
+        if let outline = container as? SidebarOutlineView, outline.pillHandlesSelection {
+            return
+        }
         let focused = container != nil && window?.firstResponder === container
         (focused ? UITheme.sidebarSelectionFocused : UITheme.sidebarSelection).setFill()
 
@@ -49,6 +53,21 @@ final class SoftRowView: NSTableRowView {
     }
 }
 
+extension NSTableView {
+    /// The selected row's soft-pill rect in window coordinates — where the
+    /// keyboard cursor visually lives; pane-jump smears start and land here.
+    var cursorWindowRect: NSRect? {
+        guard selectedRow >= 0 else { return nil }
+        let rowRect = rect(ofRow: selectedRow)
+        guard !rowRect.isEmpty else { return nil }
+        let pill = NSRect(
+            x: rowRect.minX + 10, y: rowRect.minY + 2,
+            width: rowRect.width - 20, height: rowRect.height - 4
+        )
+        return convert(pill, to: nil)
+    }
+}
+
 /// Repaints row selections when keyboard focus enters/leaves the list, so
 /// the focus tint updates immediately.
 private func repaintSelections(of table: NSTableView) {
@@ -64,12 +83,116 @@ final class SeamlessSplitView: NSSplitView {
     }
 }
 
+/// The tree's selection highlight: one layer-backed pill that slides between
+/// rows as the cursor moves instead of teleporting, and stretches over the
+/// anchor…cursor range in tree visual mode. Non-contiguous selections fall
+/// back to SoftRowView's own drawing.
+private final class SelectionPillView: NSView {
+    var isFocused = false {
+        didSet {
+            if isFocused != oldValue { needsDisplay = true }
+        }
+    }
+
+    init() {
+        super.init(frame: .zero)
+        wantsLayer = true
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override var wantsUpdateLayer: Bool { true }
+
+    override func updateLayer() {
+        layer?.cornerRadius = 7
+        layer?.backgroundColor =
+            (isFocused ? UITheme.sidebarSelectionFocused : UITheme.sidebarSelection).cgColor
+    }
+
+    override func hitTest(_: NSPoint) -> NSView? { nil }
+}
+
 /// Outline view with the native disclosure triangle hidden by zeroing its
 /// frame. (Returning false from shouldShowOutlineCellForItem instead makes
 /// AppKit pin items expanded — collapseItem is silently ignored.)
 /// Keyboard events route to the controller first (vim-style tree navigation).
 final class SidebarOutlineView: NSOutlineView {
     var onKey: ((NSEvent) -> Bool)?
+
+    private let selectionPill = SelectionPillView()
+    private var pillInstalled = false
+    private var pillSliding = false
+
+    /// Set by the controller while tree visual mode is active: the selection
+    /// is one contiguous anchor…cursor range, so the pill stretches over the
+    /// whole range (and slides) instead of falling back to per-row drawing.
+    var visualRangeActive = false
+
+    /// True while the pill is the visible selection — SoftRowView skips its
+    /// own fill so the highlight can slide between rows.
+    var pillHandlesSelection: Bool {
+        !selectionPill.isHidden
+    }
+
+    /// Repositions (and optionally slides) the pill under the selected row —
+    /// or the whole selected range in visual mode. Hidden for any other
+    /// multi-row selection (e.g. ⌘-click).
+    func refreshSelectionPill(animated: Bool) {
+        if !pillInstalled {
+            pillInstalled = true
+            selectionPill.isHidden = true
+            addSubview(selectionPill, positioned: .below, relativeTo: nil)
+        }
+        let selection = selectedRowIndexes
+        let rowRect: NSRect
+        if selection.count == 1, let row = selection.first, row < numberOfRows {
+            rowRect = rect(ofRow: row)
+        } else if visualRangeActive, let lo = selection.first, let hi = selection.last,
+            hi < numberOfRows
+        {
+            rowRect = rect(ofRow: lo).union(rect(ofRow: hi))
+        } else {
+            selectionPill.isHidden = true
+            return
+        }
+        guard !rowRect.isEmpty else {
+            selectionPill.isHidden = true
+            return
+        }
+        // Same inset as SoftRowView's single-row pill.
+        let target = NSRect(
+            x: rowRect.minX + 10, y: rowRect.minY + 2,
+            width: rowRect.width - 20, height: rowRect.height - 4
+        )
+        selectionPill.isFocused = window?.firstResponder === self
+        let slide = animated && !selectionPill.isHidden && UIAnimation.enabled
+        selectionPill.isHidden = false
+        guard slide, selectionPill.frame != target else {
+            selectionPill.frame = target
+            return
+        }
+        pillSliding = true
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.15
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            context.allowsImplicitAnimation = true
+            selectionPill.animator().frame = target
+        } completionHandler: { [weak self] in
+            MainActor.assumeIsolated {
+                self?.pillSliding = false
+            }
+        }
+    }
+
+    /// Keeps the pill glued through reloads, expand/collapse row shifts, and
+    /// sidebar resizes — anything that moves rows without changing selection.
+    override func layout() {
+        super.layout()
+        if !pillSliding {
+            refreshSelectionPill(animated: false)
+        }
+    }
 
     override func frameOfOutlineCell(atRow row: Int) -> NSRect {
         .zero
@@ -84,13 +207,19 @@ final class SidebarOutlineView: NSOutlineView {
 
     override func becomeFirstResponder() -> Bool {
         let ok = super.becomeFirstResponder()
-        if ok { repaintSelections(of: self) }
+        if ok {
+            repaintSelections(of: self)
+            refreshSelectionPill(animated: false)
+        }
         return ok
     }
 
     override func resignFirstResponder() -> Bool {
         let ok = super.resignFirstResponder()
-        if ok { repaintSelections(of: self) }
+        if ok {
+            repaintSelections(of: self)
+            refreshSelectionPill(animated: false)
+        }
         return ok
     }
 }

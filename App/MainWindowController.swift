@@ -20,7 +20,15 @@ final class MainWindowController: NSWindowController {
     private let hostVC = ContentHostController()
     private lazy var imageVC: ImageViewerViewController = {
         let vc = ImageViewerViewController()
-        vc.onFocusSidebar = { [weak self] in self?.sidebarVC.focusTree() }
+        vc.onFocusSidebar = { [weak self] in self?.focusSidebarPane() }
+        vc.onDismiss = { [weak self] in
+            guard let self else { return }
+            if let url = self.session.currentNoteURL {
+                self.open(noteAt: url)
+            } else {
+                self.showEmpty()
+            }
+        }
         return vc
     }()
     private var sidebarItem: NSSplitViewItem?
@@ -83,6 +91,10 @@ final class MainWindowController: NSWindowController {
         hostVC.show(editorVC)
 
         sidebarVC.onSelectNote = { [weak self] url in self?.open(noteAt: url) }
+        session.onCurrentNoteContentChanged = { [weak self] in
+            guard let self, let url = self.session.currentNoteURL else { return }
+            self.open(noteAt: url) // reload the rewritten content from disk
+        }
         sidebarVC.onSelectFixed = { [weak self] fixed in self?.showFixed(fixed) }
         sidebarVC.onSelectView = { [weak self] ref in self?.showView(ref) }
         sidebarVC.onCurrentNoteRemoved = { [weak self] in self?.showEmpty() }
@@ -126,16 +138,20 @@ final class MainWindowController: NSWindowController {
         updateVimBar(mode: .normal)
 
         // Pane navigation: ⌃h from the editor → tree; ⌃l/Esc in tree → editor.
+        // Each jump trails a cursor smear from the old cursor home to the new.
         editorVC.editor.textView.onPaneNavigate = { [weak self] direction in
             if direction == "h" || direction == "j" || direction == "k" {
-                self?.sidebarVC.focusTree()
+                self?.focusSidebarPane()
             }
         }
         sidebarVC.onFocusEditor = { [weak self] in
-            self?.focusCurrentContent()
+            guard let self else { return }
+            let from = self.sidebarVC.cursorWindowRect
+            self.focusCurrentContent()
+            UIAnimation.smearFocus(from: from, to: self.contentCursorWindowRect(), in: self.window)
         }
-        searchVC.onFocusSidebar = { [weak self] in self?.sidebarVC.focusTree() }
-        trashVC.onFocusSidebar = { [weak self] in self?.sidebarVC.focusTree() }
+        searchVC.onFocusSidebar = { [weak self] in self?.focusSidebarPane() }
+        trashVC.onFocusSidebar = { [weak self] in self?.focusSidebarPane() }
         // Vault image files open in the content pane; everything else falls
         // back to the system default.
         editorVC.editor.onOpenImageFile = { [weak self] url in
@@ -211,6 +227,10 @@ final class MainWindowController: NSWindowController {
 
     func open(noteAt url: URL) {
         if Vault.isImageFile(url) {
+            // Image → other image swaps inside the same pane; fade in place.
+            if hostVC.current === imageVC {
+                UIAnimation.fadeNextChange(of: imageVC.view)
+            }
             imageVC.display(url: url)
             hostVC.show(imageVC)
             window?.title = url.lastPathComponent
@@ -222,10 +242,14 @@ final class MainWindowController: NSWindowController {
             NSSound.beep()
             return
         }
+        // Fade only real note switches: reloads of the open note (external
+        // rewrites) stay still, and pane swaps already fade in the host.
+        let sameNote = session.currentNoteURL?.standardizedFileURL == url.standardizedFileURL
+        let paneSwaps = hostVC.current !== editorVC
         session.noteOpened(url)
         hostVC.show(editorVC)
         editorVC.editor.noteFolderURL = url.deletingLastPathComponent()
-        editorVC.display(text: text, readOnly: locked)
+        editorVC.display(text: text, readOnly: locked, animated: !sameNote && !paneSwaps)
         window?.title = url.deletingPathExtension().lastPathComponent
         editorVC.focusEditor()
         inspectorVC.update(noteURL: url, text: text)
@@ -296,8 +320,9 @@ final class MainWindowController: NSWindowController {
         guard let url = Bundle.main.url(forResource: "Docs", withExtension: "md"),
               let text = try? String(contentsOf: url, encoding: .utf8) else { return }
         session.flushPendingSave()
+        let inPlace = hostVC.current === editorVC
         hostVC.show(editorVC)
-        editorVC.display(text: text, readOnly: true)
+        editorVC.display(text: text, readOnly: true, animated: inPlace)
         window?.title = "Noiets Docs"
         editorVC.focusEditor()
     }
@@ -309,6 +334,29 @@ final class MainWindowController: NSWindowController {
         hostVC.show(searchVC)
         searchVC.focusList() // j/k works straight away
         window?.title = session.vault.name
+    }
+
+    /// ⌃h from any content view: focus the tree, trailing a cursor smear
+    /// from the content cursor's old home to the tree row it lands on.
+    private func focusSidebarPane() {
+        let from = contentCursorWindowRect()
+        sidebarVC.focusTree()
+        UIAnimation.smearFocus(from: from, to: sidebarVC.cursorWindowRect, in: window)
+    }
+
+    /// Where the cursor visually lives in the content pane (nil for the
+    /// image viewer — no cursor, no smear).
+    private func contentCursorWindowRect() -> NSRect? {
+        switch hostVC.current {
+        case let vc where vc === searchVC:
+            return searchVC.cursorWindowRect
+        case let vc where vc === trashVC:
+            return trashVC.cursorWindowRect
+        case let vc where vc === imageVC:
+            return nil
+        default:
+            return editorVC.editor.caretWindowRect
+        }
     }
 
     /// ⌃l from the tree focuses whatever the content pane currently shows.
@@ -332,7 +380,7 @@ final class MainWindowController: NSWindowController {
     }
 
     private func showEmpty() {
-        editorVC.displayEmpty()
+        editorVC.displayEmpty(animated: hostVC.current === editorVC)
         hostVC.show(editorVC)
         window?.title = session.vault.name
     }
@@ -558,10 +606,14 @@ final class ContentHostController: NSViewController {
 
     override func loadView() {
         view = NSView()
+        view.wantsLayer = true  // pane swaps crossfade via CATransition
     }
 
     func show(_ vc: NSViewController) {
         guard vc !== current else { return }
+        if current != nil {
+            UIAnimation.fadeNextChange(of: view)
+        }
         if let current {
             current.view.removeFromSuperview()
             current.removeFromParent()

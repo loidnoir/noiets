@@ -247,7 +247,32 @@ final class VaultSession {
         }
     }
 
-    /// Moves a note or folder into another folder (drag & drop). Returns the
+    /// Fires when the open note's on-disk content was rewritten behind the
+    /// editor's back (media-reference fixes after a move) — reload it.
+    var onCurrentNoteContentChanged: (() -> Void)?
+
+    /// Batch move (move-to picker, drag & drop) that keeps media references
+    /// in the moved notes working: relative references that broke are
+    /// rewritten to the media's vault-root-relative path.
+    @discardableResult
+    func moveItems(_ sources: [URL], into folder: URL) -> [URL] {
+        flushPendingSave() // rewrite on top of saved content, not stale disk
+        var moves: [(from: URL, to: URL)] = []
+        for source in sources {
+            if let dest = moveItem(at: source, into: folder) {
+                moves.append((source, dest))
+            }
+        }
+        guard !moves.isEmpty else { return [] }
+        let rewritten = MediaReferences.fixAfterMove(moves, vault: vault)
+        if let current = currentNoteURL?.standardizedFileURL,
+           rewritten.contains(where: { $0.standardizedFileURL == current }) {
+            onCurrentNoteContentChanged?()
+        }
+        return moves.map(\.to)
+    }
+
+    /// Moves a note or folder into another folder. Returns the
     /// destination URL, or nil for no-ops/failures. Keeps the open note's
     /// identity intact across the move.
     @discardableResult

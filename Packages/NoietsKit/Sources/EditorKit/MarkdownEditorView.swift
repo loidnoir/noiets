@@ -181,6 +181,10 @@ public final class MarkdownEditorView: NSView {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(text, forType: .string)
         }
+        vim.pasteboardText = {
+            // …and p/P read it back, so copies made in other apps paste too.
+            NSPasteboard.general.string(forType: .string)
+        }
         refreshCaretShape()
     }
 
@@ -229,12 +233,87 @@ public final class MarkdownEditorView: NSView {
         if blockCaret.superview !== textView {
             textView.addSubview(blockCaret)
         }
-        guard let rect = caretGlyphRect(at: vim.displayCaret) else {
+        let caret = vim.displayCaret
+        guard let rect = caretGlyphRect(at: caret) else {
             blockCaret.isHidden = true
+            smearCaretLocation = caret
             return
         }
+        // Trail only on real cursor motion — the caret offset changing — not
+        // on relayout re-placements (geometry shifts, block restyles).
+        if caret != smearCaretLocation, !blockCaret.isHidden {
+            spawnCaretSmear(from: blockCaret.frame, to: rect)
+        }
+        smearCaretLocation = caret
         blockCaret.frame = rect
         blockCaret.isHidden = false
+    }
+
+    // MARK: Caret smear
+    // Vim-style motion trail: on every jump a quad stretched between the old
+    // and new caret cells collapses into the new cell while fading — the
+    // cursor visibly "travels" instead of teleporting.
+
+    private var smearCaretLocation = -1
+
+    private func spawnCaretSmear(from old: NSRect, to new: NSRect) {
+        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+        let dx = new.midX - old.midX
+        let dy = new.midY - old.midY
+        guard abs(dx) + abs(dy) >= 2 else { return }  // sub-cell jitter
+        textView.wantsLayer = true
+        guard let host = textView.layer else { return }
+
+        let (start, end) = smearQuads(from: old, to: new, dx: dx, dy: dy)
+        let smear = CAShapeLayer()
+        smear.fillColor = blockCaret.color.cgColor
+        smear.path = end
+        smear.opacity = 0
+        host.addSublayer(smear)
+
+        let collapse = CABasicAnimation(keyPath: "path")
+        collapse.fromValue = start
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 1
+        let group = CAAnimationGroup()
+        group.animations = [collapse, fade]
+        group.duration = 0.18
+        group.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        smear.add(group, forKey: "smear")
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            smear.removeFromSuperlayer()
+        }
+    }
+
+    /// The smear quad's leading edge sits on the new cell, its trailing edge
+    /// on the far side of the old cell; the end state is the new cell itself,
+    /// so the path animation sweeps the tail in behind the cursor.
+    private func smearQuads(
+        from old: NSRect, to new: NSRect, dx: CGFloat, dy: CGFloat
+    ) -> (start: CGPath, end: CGPath) {
+        // Corner order tl → tr → br → bl in the text view's flipped coords.
+        func corners(_ r: NSRect) -> [CGPoint] {
+            [
+                CGPoint(x: r.minX, y: r.minY), CGPoint(x: r.maxX, y: r.minY),
+                CGPoint(x: r.maxX, y: r.maxY), CGPoint(x: r.minX, y: r.maxY),
+            ]
+        }
+        let o = corners(old)
+        let n = corners(new)
+        let start: [CGPoint]
+        if abs(dx) >= abs(dy) {
+            start = dx >= 0 ? [o[0], n[1], n[2], o[3]] : [n[0], o[1], o[2], n[3]]
+        } else {
+            start = dy >= 0 ? [o[0], o[1], n[2], n[3]] : [n[0], n[1], o[2], o[3]]
+        }
+        func path(_ points: [CGPoint]) -> CGPath {
+            let p = CGMutablePath()
+            p.addLines(between: points)
+            p.closeSubpath()
+            return p
+        }
+        return (path(start), path(n))
     }
 
     /// Any geometry change (document height shifts from live-preview restyles,
@@ -303,6 +382,13 @@ public final class MarkdownEditorView: NSView {
         }
     }
 
+    /// The current caret cell in window coordinates — pane-jump animations
+    /// smear between this and the tree cursor.
+    public var caretWindowRect: NSRect? {
+        guard let rect = caretGlyphRect(at: vim.displayCaret) else { return nil }
+        return textView.convert(rect, to: nil)
+    }
+
     /// Rect of the character cell under the caret, in text-view coordinates.
     private func caretGlyphRect(at location: Int) -> NSRect? {
         guard let window = textView.window else { return nil }
@@ -323,51 +409,62 @@ public final class MarkdownEditorView: NSView {
 
     /// ⌘V with an image (or image file) on the clipboard: save it into the
     /// vault's assets/ folder and insert the markdown embed at the caret.
+    private static let pastableImageExts: Set<String> =
+        ["png", "jpg", "jpeg", "gif", "heic", "webp", "tiff", "bmp"]
+    private static let pastableVideoExts: Set<String> =
+        ["mp4", "mov", "m4v", "webm", "avi", "mkv"]
+
     private func pasteImageFromClipboard() -> Bool {
         guard let root = resourceRoot else { return false }
         let pasteboard = NSPasteboard.general
 
-        // An image FILE on the clipboard (Finder copy) is copied into assets/.
+        // A media FILE on the clipboard (Finder copy) — image, gif, or video
+        // — is copied into the vault's hidden .cache/ folder and referenced.
         if let urls = pasteboard.readObjects(
             forClasses: [NSURL.self],
             options: [.urlReadingFileURLsOnly: true]
         ) as? [URL], let file = urls.first {
             let ext = file.pathExtension.lowercased()
-            let imageExts = ["png", "jpg", "jpeg", "gif", "heic", "webp", "tiff", "bmp"]
-            guard imageExts.contains(ext) else { return false }
-            return embedImage(data: try? Data(contentsOf: file), ext: ext, root: root)
+            guard Self.pastableImageExts.contains(ext) || Self.pastableVideoExts.contains(ext),
+                  let dest = cacheDestination(ext: ext, root: root),
+                  (try? FileManager.default.copyItem(at: file, to: dest)) != nil
+            else { return false }
+            insertMediaReference(name: dest.lastPathComponent)
+            return true
         }
 
         // Raw image data (screenshot in clipboard) is written as PNG.
         if let image = NSImage(pasteboard: pasteboard) {
             guard let tiff = image.tiffRepresentation,
                   let rep = NSBitmapImageRep(data: tiff),
-                  let png = rep.representation(using: .png, properties: [:]) else { return false }
-            return embedImage(data: png, ext: "png", root: root)
+                  let png = rep.representation(using: .png, properties: [:]),
+                  let dest = cacheDestination(ext: "png", root: root),
+                  (try? png.write(to: dest)) != nil
+            else { return false }
+            insertMediaReference(name: dest.lastPathComponent)
+            return true
         }
         return false
     }
 
-    private func embedImage(data: Data?, ext: String, root: URL) -> Bool {
-        guard let data else { return false }
-        let assets = root.appendingPathComponent("assets", isDirectory: true)
-        try? FileManager.default.createDirectory(at: assets, withIntermediateDirectories: true)
-
+    /// A unique pasted-<timestamp> destination inside `<vault>/.cache`
+    /// (dot-prefixed: hidden from the tree and never indexed as a note).
+    private func cacheDestination(ext: String, root: URL) -> URL? {
+        let cache = root.appendingPathComponent(".cache", isDirectory: true)
+        try? FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyyMMdd-HHmmss"
         var name = "pasted-\(formatter.string(from: Date())).\(ext)"
         var counter = 2
-        while FileManager.default.fileExists(atPath: assets.appendingPathComponent(name).path) {
+        while FileManager.default.fileExists(atPath: cache.appendingPathComponent(name).path) {
             name = "pasted-\(formatter.string(from: Date()))-\(counter).\(ext)"
             counter += 1
         }
-        do {
-            try data.write(to: assets.appendingPathComponent(name))
-        } catch {
-            return false
-        }
+        return cache.appendingPathComponent(name)
+    }
 
-        let markdown = "![](assets/\(name))"
+    private func insertMediaReference(name: String) {
+        let markdown = "![](.cache/\(name))"
         let caret = textView.selectedRange()
         if textView.shouldChangeText(in: caret, replacementString: markdown) {
             textView.textStorage?.replaceCharacters(in: caret, with: markdown)
@@ -376,7 +473,6 @@ public final class MarkdownEditorView: NSView {
                 NSRange(location: caret.location + (markdown as NSString).length, length: 0)
             )
         }
-        return true
     }
 
     // MARK: Content

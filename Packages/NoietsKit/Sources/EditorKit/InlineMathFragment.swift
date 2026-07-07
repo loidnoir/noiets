@@ -77,8 +77,11 @@ final class OverlayLineFragment: NSTextLayoutFragment {
             let anchor = line.locationForCharacter(at: span.relativeLocation)
             let bounds = line.typographicBounds
             let height = bounds.height - 3
+            // The collapsed backtick has ~zero width, so the anchor is the
+            // code text itself; the chip pads out into the whitespace around
+            // it rather than pushing the text off the shared column.
             let rect = CGRect(
-                x: point.x + bounds.origin.x + anchor.x,
+                x: point.x + bounds.origin.x + anchor.x - Self.chipPadding,
                 y: point.y + bounds.origin.y + (bounds.height - height) / 2,
                 width: width, height: height
             )

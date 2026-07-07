@@ -344,6 +344,11 @@ final class SearchViewController: NSViewController {
     private var pendingKey: Character?
     private var listCount = 0
 
+    /// The list cursor's pill rect in window coordinates (pane-jump smears).
+    var cursorWindowRect: NSRect? {
+        tableView.cursorWindowRect
+    }
+
     /// Focus the results list, selecting the first note row if nothing is.
     func focusList() {
         _ = view
