@@ -121,7 +121,10 @@ public enum InlineScanner {
                     j += 1
                 }
             }
-            return nil // unmatched: literal backticks
+            // Leave an unmatched delimiter run literal as a whole. Advancing
+            // one tick at a time would incorrectly reinterpret a suffix of the
+            // opener as a shorter delimiter (for example ```text``).
+            return i + openLen
         }
 
         // MARK: Math

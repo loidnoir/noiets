@@ -188,6 +188,14 @@ private func first(_ doc: String, _ kind: TokenKind) -> String? {
         #expect(first(doc, .inlineCode) == " a`b ")
     }
 
+    @Test func unmatchedBacktickRunStaysLiteral() {
+        for doc in ["before ```not code`` after", "before ``not code` after"] {
+            let all = tokens(doc)
+            #expect(!all.contains { $0.kind == .inlineCode })
+            #expect(!all.contains { $0.kind == .inlineCodeMarker })
+        }
+    }
+
     @Test func strikethroughAndHighlight() {
         #expect(first("~~gone~~", .strikethrough) == "gone")
         #expect(first("==hot==", .highlight) == "hot")

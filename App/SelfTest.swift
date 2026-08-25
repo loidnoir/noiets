@@ -308,7 +308,25 @@ enum SelfTest {
         result["clickExitsVisual"] = vim.mode.label == "NORMAL"
             ? "PASS" : "FAIL: \(vim.mode.label)"
 
+        // A backward drag keeps its active edge at the start of the range.
+        tv.setSelectedRange(NSRange(location: 5, length: 0))
+        tv.setSelectedRange(NSRange(location: 0, length: 5))
+        result["backwardSelectionHead"] = vim.mode.label == "VISUAL" && vim.displayCaret == 0
+            ? "PASS" : "FAIL: \(vim.mode.label)/\(vim.displayCaret)"
+        key("\u{1B}", keyCode: 53)
+
+        // Fenced-code layout must not disturb native range adoption.
+        editorView.load(text: "before\n```swift\nlet value = 1\n```\nafter")
+        let codeRange = (tv.string as NSString).range(of: "let value = 1")
+        tv.setSelectedRange(NSRange(location: NSMaxRange(codeRange), length: 0))
+        tv.setSelectedRange(codeRange)
+        result["codeBlockSelection"] = vim.mode.label == "VISUAL"
+            && tv.selectedRange() == codeRange && vim.displayCaret == codeRange.location
+            ? "PASS" : "FAIL: \(vim.mode.label)/\(NSStringFromRange(tv.selectedRange()))"
+        key("\u{1B}", keyCode: 53)
+
         // Key-driven visual still works and is not disturbed by the sync.
+        editorView.load(text: "alpha beta gamma\nsecond line\n")
         key("v")
         key("l")
         result["keyVisualIntact"] = vim.mode.label == "VISUAL" && tv.selectedRange().length == 2

@@ -26,12 +26,12 @@ enum InlineMath {
 /// Draws its line of text normally, then paints overlays on top of collapsed
 /// markup runs: typeset math over `$…$` spans, a round dot over a hidden list
 /// dash. Entering the line reverts to source.
-final class OverlayLineFragment: NSTextLayoutFragment {
+class OverlayLineFragment: NSTextLayoutFragment {
     enum OverlayKind {
         case image(NSImage)
         case bullet
         case checkbox(checked: Bool)
-        case chip(width: CGFloat) // rounded background behind an inline-code span
+        case chip(range: NSRange) // content range, relative to the text element
     }
 
     nonisolated static let chipPadding: CGFloat = 4.5
@@ -67,26 +67,37 @@ final class OverlayLineFragment: NSTextLayoutFragment {
         textLineFragments.first { $0.characterRange.contains(location) }
     }
 
+    /// One chip rect per visual row. Using TextKit's character positions keeps
+    /// the background aligned with actual glyphs and lets long code spans wrap
+    /// without painting across the editor column.
+    private func chipRects(for range: NSRange, at point: CGPoint) -> [CGRect] {
+        textLineFragments.compactMap { line in
+            let segment = NSIntersectionRange(range, line.characterRange)
+            guard segment.length > 0 else { return nil }
+
+            let bounds = line.typographicBounds
+            let start = line.locationForCharacter(at: segment.location).x
+            let end = line.locationForCharacter(at: NSMaxRange(segment)).x
+            let height = bounds.height - 3
+            return CGRect(
+                x: point.x + bounds.origin.x + start - Self.chipPadding,
+                y: point.y + bounds.origin.y + (bounds.height - height) / 2,
+                width: max(end - start, 1) + Self.chipPadding * 2,
+                height: height
+            )
+        }
+    }
+
     override func draw(at point: CGPoint, in context: CGContext) {
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
         // Chip backgrounds go under the glyphs.
         for span in spans {
-            guard case .chip(let width) = span.kind,
-                  let line = lineFragment(containing: span.relativeLocation) else { continue }
-            let anchor = line.locationForCharacter(at: span.relativeLocation)
-            let bounds = line.typographicBounds
-            let height = bounds.height - 3
-            // The collapsed backtick has ~zero width, so the anchor is the
-            // code text itself; the chip pads out into the whitespace around
-            // it rather than pushing the text off the shared column.
-            let rect = CGRect(
-                x: point.x + bounds.origin.x + anchor.x - Self.chipPadding,
-                y: point.y + bounds.origin.y + (bounds.height - height) / 2,
-                width: width, height: height
-            )
-            theme.codeBackground.setFill()
-            NSBezierPath(roundedRect: rect, xRadius: 4, yRadius: 4).fill()
+            guard case .chip(let range) = span.kind else { continue }
+            for rect in chipRects(for: range, at: point) {
+                theme.codeBackground.setFill()
+                NSBezierPath(roundedRect: rect, xRadius: 4, yRadius: 4).fill()
+            }
         }
         NSGraphicsContext.restoreGraphicsState()
 

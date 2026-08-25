@@ -542,6 +542,29 @@ private func type(_ engine: VimEngine, _ target: MockTarget, _ text: String) {
 
 @MainActor
 @Suite struct VisualTests {
+    @Test func nativeBackwardSelectionKeepsItsActiveEdge() {
+        let (e, t) = makeEngine("alpha beta", caret: 5)
+        t.selection = NSRange(location: 0, length: 5)
+        e.syncNativeSelection(t.selection, anchor: 4, head: 0)
+
+        #expect(e.mode == .visual(line: false))
+        #expect(e.displayCaret == 0)
+        send(e, "\u{1B}")
+        #expect(t.selection == NSRange(location: 0, length: 0))
+    }
+
+    @Test func nativeSelectionCancelsPendingOperator() {
+        let (e, t) = makeEngine("alpha beta", caret: 0)
+        send(e, "d")
+        #expect(e.mode == .operatorPending)
+
+        t.selection = NSRange(location: 6, length: 4)
+        e.syncNativeSelection(t.selection, anchor: 6, head: 9)
+        #expect(e.mode == .visual(line: false))
+        send(e, "d")
+        #expect(t.s == "alpha ")
+    }
+
     @Test func tabIndentsSelectedLines() {
         let (e, t) = makeEngine("one\ntwo\nthree", caret: 0)
         send(e, "vj") // select across lines 1–2

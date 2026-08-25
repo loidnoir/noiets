@@ -121,24 +121,37 @@ public final class VimEngine {
     /// apply to them; a click that collapses the selection while visual
     /// drops back to normal. Changes made during key handling are the
     /// engine's own and are ignored.
-    public func syncNativeSelection(_ range: NSRange) {
+    public func syncNativeSelection(_ range: NSRange, anchor: Int? = nil, head: Int? = nil) {
         guard !handlingKey, target != nil else { return }
+
+        func adoptSelection() {
+            let lower = range.location
+            let upper = range.location + range.length - 1
+            visualAnchor = min(max(anchor ?? lower, lower), upper)
+            visualHead = min(max(head ?? upper, lower), upper)
+            mode = .visual(line: false)
+        }
+
         switch mode {
-        case .insert, .operatorPending:
+        case .insert:
             return
+        case .operatorPending:
+            // A mouse action supersedes an unfinished operator such as `d`.
+            // Leaving it pending makes the next key act on an unrelated range.
+            resetPending()
+            if range.length > 0 { adoptSelection() }
+            statusUpdate()
         case .visual:
             if range.length == 0 {
                 mode = .normal
             } else {
-                visualAnchor = range.location
-                visualHead = range.location + range.length - 1
-                mode = .visual(line: false) // a drag re-shapes any linewise selection
+                adoptSelection() // a drag re-shapes any linewise selection
             }
+            statusUpdate()
         case .normal:
             guard range.length > 0 else { return }
-            visualAnchor = range.location
-            visualHead = range.location + range.length - 1
-            mode = .visual(line: false)
+            adoptSelection()
+            statusUpdate()
         }
     }
 

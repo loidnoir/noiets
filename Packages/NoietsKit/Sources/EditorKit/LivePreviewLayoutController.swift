@@ -33,7 +33,7 @@ public final class LivePreviewLayoutController: NSObject {
         case overlays(spans: [OverlayLineFragment.Span])
         case tableRow(cells: [String], isHeader: Bool, columns: [CGFloat])
         case tableDelimiter
-        case quote
+        case quote(spans: [OverlayLineFragment.Span], joinsPrevious: Bool, joinsNext: Bool)
         case rule
     }
 
@@ -93,7 +93,30 @@ public final class LivePreviewLayoutController: NSObject {
                          roundBottom: lineIndex == scan.lines.count - 1 || !isCode(lineIndex + 1),
                          badge: badge)
         case .blockquote:
-            return .quote
+            let spans = active ? [] : inlineOverlaySpans(
+                tokens: MarkdownScan.lineTokens(text, line: line),
+                text: text,
+                base: line.range.location,
+                includeMath: false
+            )
+            func isQuote(_ index: Int) -> Bool {
+                guard scan.lines.indices.contains(index) else { return false }
+                if case .blockquote = scan.lines[index].kind { return true }
+                return false
+            }
+            return .quote(
+                spans: spans,
+                joinsPrevious: isQuote(lineIndex - 1),
+                joinsNext: isQuote(lineIndex + 1)
+            )
+        case .heading where !active:
+            let spans = inlineOverlaySpans(
+                tokens: MarkdownScan.lineTokens(text, line: line),
+                text: text,
+                base: line.range.location,
+                includeMath: false
+            )
+            return spans.isEmpty ? .plain : .overlays(spans: spans)
         case .horizontalRule where !active:
             return .rule
         case .mathDelimiter where !active:
@@ -125,7 +148,7 @@ public final class LivePreviewLayoutController: NSObject {
             return .tableRow(cells: cells, isHeader: lineIndex == headerIndex, columns: columns)
         case .listItem(let markerRange, let ordered, let task, _) where !active:
             let tokens = MarkdownScan.lineTokens(text, line: line)
-            var spans = inlineMathSpans(tokens: tokens, text: text, base: line.range.location)
+            var spans = inlineOverlaySpans(tokens: tokens, text: text, base: line.range.location)
             if let task {
                 spans.insert(.init(relativeLocation: task.range.location - line.range.location,
                                    kind: .checkbox(checked: task.checked)), at: 0)
@@ -168,7 +191,7 @@ public final class LivePreviewLayoutController: NSObject {
                 }
             }
             // Math mixed into the text: typeset inline over the collapsed spans.
-            let spans = inlineMathSpans(tokens: tokens, text: text, base: line.range.location)
+            let spans = inlineOverlaySpans(tokens: tokens, text: text, base: line.range.location)
             if !spans.isEmpty {
                 return .overlays(spans: spans)
             }
@@ -279,14 +302,14 @@ public final class LivePreviewLayoutController: NSObject {
     /// Marker-content-marker runs of a line — inline math and inline-code
     /// chips — as fragment-relative spans. Mirrors the highlighter's collapse
     /// rule: a span appears here iff its width was reserved there.
-    private func inlineMathSpans(
-        tokens: [Token], text: NSString, base: Int
+    private func inlineOverlaySpans(
+        tokens: [Token], text: NSString, base: Int, includeMath: Bool = true
     ) -> [OverlayLineFragment.Span] {
         var spans: [OverlayLineFragment.Span] = []
         for (i, token) in tokens.enumerated() {
             switch token.kind {
             case .mathContent(let display):
-                guard i > 0, i + 1 < tokens.count,
+                guard includeMath, i > 0, i + 1 < tokens.count,
                       tokens[i - 1].kind == .mathMarker,
                       tokens[i + 1].kind == .mathMarker,
                       let image = InlineMath.image(latex: text.substring(with: token.range),
@@ -298,10 +321,10 @@ public final class LivePreviewLayoutController: NSObject {
                 guard i > 0, i + 1 < tokens.count,
                       tokens[i - 1].kind == .inlineCodeMarker,
                       tokens[i + 1].kind == .inlineCodeMarker else { continue }
-                let content = (text.substring(with: token.range) as NSString)
-                    .size(withAttributes: [.font: theme.monoFont]).width
-                spans.append(.init(relativeLocation: tokens[i - 1].range.location - base,
-                                   kind: .chip(width: content + OverlayLineFragment.chipPadding * 2)))
+                let relative = NSRange(location: token.range.location - base,
+                                       length: token.range.length)
+                spans.append(.init(relativeLocation: relative.location,
+                                   kind: .chip(range: relative)))
             default:
                 continue
             }
@@ -406,8 +429,15 @@ extension LivePreviewLayoutController: @preconcurrency NSTextLayoutManagerDelega
             return TableDelimiterFragment(textElement: textElement, range: elementRange, theme: theme)
         case .collapsed:
             return CollapsedLineFragment(textElement: textElement, range: elementRange)
-        case .quote:
-            return QuoteBarFragment(textElement: textElement, range: elementRange, theme: theme)
+        case .quote(let spans, let joinsPrevious, let joinsNext):
+            return QuoteBarFragment(
+                textElement: textElement,
+                range: elementRange,
+                theme: theme,
+                spans: spans,
+                joinsPrevious: joinsPrevious,
+                joinsNext: joinsNext
+            )
         case .rule:
             return RuleFragment(textElement: textElement, range: elementRange, theme: theme)
         }

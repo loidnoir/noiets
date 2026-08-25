@@ -829,7 +829,8 @@ extension MarkdownEditorView: NSTextViewDelegate {
         guard selection.location != NSNotFound else { return }
         // Any natively made selection (mouse drag, shift-arrows) enters
         // visual mode; collapsing it by click leaves visual.
-        vim.syncNativeSelection(selection)
+        let endpoints = textView.vimSelectionEndpoints
+        vim.syncNativeSelection(selection, anchor: endpoints?.anchor, head: endpoints?.head)
         let paragraph = text.length == 0
             ? NSRange(location: 0, length: 0)
             : text.paragraphRange(for: NSRange(

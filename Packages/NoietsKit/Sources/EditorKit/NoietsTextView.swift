@@ -18,6 +18,12 @@ public final class NoietsTextView: NSTextView {
     var verticalGoalX: CGFloat?
     var inVerticalMove = false
 
+    /// AppKit exposes a normalized selected range, not which edge the user is
+    /// dragging. Keep the insertion-position anchor across native selection
+    /// updates so Vim can put its visual head on the correct edge.
+    private var nativeSelectionAnchorPosition = 0
+    private(set) var vimSelectionEndpoints: (anchor: Int, head: Int)?
+
     /// Read-only document (the built-in docs): every change is rejected at
     /// the single text-change gate. The view stays `isEditable` so caret
     /// movement keeps normal semantics — a non-editable NSTextView turns
@@ -426,6 +432,29 @@ extension NoietsTextView: VimTextTarget {
     ) {
         if !inVerticalMove {
             verticalGoalX = nil
+        }
+        if let range = ranges.first?.rangeValue, range.location != NSNotFound {
+            let oldRange = selectedRange()
+            if range.length == 0 {
+                nativeSelectionAnchorPosition = range.location
+                vimSelectionEndpoints = nil
+            } else {
+                let upper = NSMaxRange(range)
+                if oldRange.length == 0,
+                   oldRange.location >= range.location,
+                   oldRange.location <= upper {
+                    nativeSelectionAnchorPosition = oldRange.location
+                } else if nativeSelectionAnchorPosition < range.location
+                            || nativeSelectionAnchorPosition > upper {
+                    nativeSelectionAnchorPosition = range.location
+                }
+
+                if nativeSelectionAnchorPosition >= upper {
+                    vimSelectionEndpoints = (anchor: upper - 1, head: range.location)
+                } else {
+                    vimSelectionEndpoints = (anchor: range.location, head: upper - 1)
+                }
+            }
         }
         super.setSelectedRanges(ranges, affinity: affinity, stillSelecting: stillSelecting)
     }

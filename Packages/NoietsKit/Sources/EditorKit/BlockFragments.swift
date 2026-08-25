@@ -206,21 +206,33 @@ final class TableRowFragment: NSTextLayoutFragment {
     }
 }
 
-/// Accent bar alongside blockquote lines (glyphs still draw).
-final class QuoteBarFragment: NSTextLayoutFragment {
+/// Accent bar alongside blockquote lines (glyphs still draw). Consecutive
+/// quote paragraphs join into one continuous bar, just like wrapped visual
+/// lines within a single paragraph.
+final class QuoteBarFragment: OverlayLineFragment {
     private let theme: EditorTheme
+    private let joinsPrevious: Bool
+    private let joinsNext: Bool
 
-    init(textElement: NSTextElement, range: NSTextRange?, theme: EditorTheme) {
+    init(textElement: NSTextElement, range: NSTextRange?, theme: EditorTheme,
+         spans: [OverlayLineFragment.Span], joinsPrevious: Bool, joinsNext: Bool) {
         self.theme = theme
-        super.init(textElement: textElement, range: range)
+        self.joinsPrevious = joinsPrevious
+        self.joinsNext = joinsNext
+        super.init(textElement: textElement, range: range, theme: theme, spans: spans)
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override var renderingSurfaceBounds: CGRect {
-        super.renderingSurfaceBounds.union(
-            CGRect(x: -24, y: 0, width: 28, height: layoutFragmentFrame.height))
+        let overlap: CGFloat = 1
+        return super.renderingSurfaceBounds.union(
+            CGRect(x: -24, y: joinsPrevious ? -overlap : 0, width: 28,
+                   height: layoutFragmentFrame.height
+                       + (joinsPrevious ? overlap : 0)
+                       + (joinsNext ? overlap : 0))
+        )
     }
 
     override func draw(at point: CGPoint, in context: CGContext) {
@@ -251,8 +263,16 @@ final class QuoteBarFragment: NSTextLayoutFragment {
             + (firstLine?.glyphOrigin.y ?? font.ascender)
         let lastBaseline = (lastLine?.typographicBounds.origin.y ?? 0)
             + (lastLine?.glyphOrigin.y ?? font.ascender)
-        let top = firstBaseline - font.capHeight - 1.5
-        let bottom = lastBaseline - font.descender + 1.5 // descender is negative
+        // Interior quote lines extend through their fragment edges. A small
+        // overlap prevents an antialiasing seam where neighboring fragments
+        // meet; only the outside ends of the complete quote block stay capped.
+        let overlap: CGFloat = 1
+        let top = joinsPrevious
+            ? -overlap
+            : firstBaseline - font.capHeight - 1.5
+        let bottom = joinsNext
+            ? layoutFragmentFrame.height + overlap
+            : lastBaseline - font.descender + 1.5 // descender is negative
         let bar = CGRect(x: point.x - layoutFragmentFrame.minX + padding + dashHalf - 1.5,
                          y: point.y + top, width: 3, height: bottom - top)
         context.addPath(CGPath(roundedRect: bar, cornerWidth: 1.5, cornerHeight: 1.5,
