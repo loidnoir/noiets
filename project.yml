@@ -2,7 +2,7 @@ name: Noiets
 options:
   bundleIdPrefix: com.noiets
   deploymentTarget:
-    macOS: "26.0"
+    macOS: "14.0"
   createIntermediateGroups: true
 
 packages:
