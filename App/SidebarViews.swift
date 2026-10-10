@@ -1,4 +1,5 @@
 import AppKit
+import RenderKit
 
 /// Row with a soft rounded-rect selection — quiet gray in both key and
 /// non-key states. Deliberately not the system accent/vibrancy treatment.
@@ -16,7 +17,7 @@ final class SoftRowView: NSTableRowView {
         let joinBelow = isNextRowSelected
         let topGap: CGFloat = (isFlipped ? joinAbove : joinBelow) ? 0 : 2
         let bottomGap: CGFloat = (isFlipped ? joinBelow : joinAbove) ? 0 : 2
-        let rect = NSRect(
+        var rect = NSRect(
             x: bounds.minX + 10,
             y: bounds.minY + topGap,
             width: bounds.width - 20,
@@ -32,6 +33,21 @@ final class SoftRowView: NSTableRowView {
         // Single selections in the tree are drawn by the sliding pill instead.
         if let outline = container as? SidebarOutlineView, outline.pillHandlesSelection {
             return
+        }
+        // Lists use their own renderer, not the tree's animated pill. Fit a
+        // single result's icon/title/detail instead of drawing a wide banner.
+        if let table = container as? VimTableView, table.selectedRowIndexes.count == 1 {
+            let row = table.row(for: self)
+            if row >= 0, let cell = table.view(atColumn: 0, row: row, makeIfNecessary: false) as? SearchHitCellView {
+                cell.layoutSubtreeIfNeeded()
+                let content = convert(cell.selectionContentBounds, from: cell)
+                let left = max(rect.minX, content.minX - 10)
+                let right = min(rect.maxX, content.maxX + 10)
+                if !content.isEmpty, right > left {
+                    rect.origin.x = left
+                    rect.size.width = right - left
+                }
+            }
         }
         let focused = container != nil && window?.firstResponder === container
         (focused ? UITheme.sidebarSelectionFocused : UITheme.sidebarSelection).setFill()
@@ -55,6 +71,7 @@ final class SoftRowView: NSTableRowView {
 
 /// Repaints row selections when keyboard focus enters/leaves the list, so
 /// the focus tint updates immediately.
+@MainActor
 private func repaintSelections(of table: NSTableView) {
     table.enumerateAvailableRowViews { rowView, _ in
         rowView.needsDisplay = true
@@ -145,11 +162,31 @@ final class SidebarOutlineView: NSOutlineView {
             selectionPill.isHidden = true
             return
         }
-        // Same inset as SoftRowView's single-row pill.
-        let target = NSRect(
+        // Keep the existing vertical padding and multi-row slab. A single
+        // tree selection starts at its label and extends to the pane's edge.
+        var target = NSRect(
             x: rowRect.minX + 10, y: rowRect.minY + 2,
             width: rowRect.width - 20, height: rowRect.height - 4
         )
+        if selection.count == 1, let row = selection.first,
+           let cell = view(atColumn: 0, row: row, makeIfNecessary: true) as? NSTableCellView,
+           let label = cell.textField {
+            if cell.frame.isEmpty { cell.frame = frameOfCell(atColumn: 0, row: row) }
+            cell.layoutSubtreeIfNeeded()
+            let title = convert(label.bounds, from: label)
+            // Follow indentation, keeping icons outside the highlight and
+            // the existing right-hand gutter regardless of filename length.
+            var left = max(target.minX, title.minX - 4)
+            if let folder = cell as? SidebarFolderCellView {
+                let icon = convert(folder.selectionIconBounds, from: folder)
+                left = max(left, icon.maxX + 2)
+            }
+            let right = bounds.maxX - 10
+            if title.width > 0, right > left {
+                target.origin.x = left
+                target.size.width = right - left
+            }
+        }
         selectionPill.isFocused = window?.firstResponder === self
         let slide = animated && !selectionPill.isHidden && UIAnimation.enabled
         selectionPill.isHidden = false
@@ -266,7 +303,7 @@ final class SidebarCellView: NSTableCellView {
         // Prominent rows (the fixed sidebar items) use the larger label; list
         // rows keep the compact one even when they carry a type icon.
         let isProminent = prominent ?? (symbol != nil || image != nil)
-        label.font = .systemFont(
+        label.font = AppFonts.font(
             ofSize: isProminent ? 15 : 13.5,
             weight: isProminent ? .medium : (isFolder ? .medium : .regular)
         )
@@ -305,7 +342,7 @@ final class SidebarFolderCellView: NSTableCellView {
         icon.contentTintColor = UITheme.sidebarSecondaryText
         icon.setContentHuggingPriority(.required, for: .horizontal)
 
-        label.font = .systemFont(ofSize: 15, weight: .medium)
+        label.font = AppFonts.font(ofSize: 15, weight: .medium)
         label.textColor = UITheme.sidebarPrimaryText
         label.lineBreakMode = .byTruncatingTail
         label.maximumNumberOfLines = 1 // long names truncate with …, never wrap
@@ -415,6 +452,9 @@ final class SidebarFolderCellView: NSTableCellView {
         chevronButton.isHidden = true
     }
 
+    /// Cell-local icon bounds let the selection retain a small clear gap.
+    var selectionIconBounds: NSRect { convert(icon.bounds, from: icon) }
+
     private func setExpanded(_ isExpanded: Bool) {
         let symbol = isExpanded ? "chevron.down" : "chevron.right"
         let config = NSImage.SymbolConfiguration(pointSize: 12, weight: .semibold)
@@ -477,8 +517,8 @@ final class SectionHeaderCellView: NSTableCellView {
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        title.font = .systemFont(ofSize: 14, weight: .semibold)
-        title.textColor = UITheme.modeNormalText
+        title.font = AppFonts.font(ofSize: 14, weight: .semibold)
+        title.textColor = UITheme.accent
         title.lineBreakMode = .byTruncatingTail
         title.maximumNumberOfLines = 1
         title.translatesAutoresizingMaskIntoConstraints = false
@@ -521,9 +561,9 @@ final class SearchHitCellView: NSTableCellView {
         super.init(frame: frameRect)
         icon.image = AppIcons.document(size: 18)
         icon.contentTintColor = .secondaryLabelColor
-        title.font = .systemFont(ofSize: 14, weight: .medium)
+        title.font = AppFonts.font(ofSize: 14, weight: .medium)
         title.lineBreakMode = .byTruncatingTail
-        detail.font = .systemFont(ofSize: 12)
+        detail.font = AppFonts.font(ofSize: 12)
         detail.textColor = .secondaryLabelColor
         detail.lineBreakMode = .byTruncatingTail
         // Long titles must truncate on one line — never wrap, never crush
@@ -557,6 +597,18 @@ final class SearchHitCellView: NSTableCellView {
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    /// Visible content extent in cell coordinates (long labels truncate).
+    var selectionContentBounds: NSRect {
+        func visibleBounds(of label: NSTextField) -> NSRect {
+            var rect = convert(label.bounds, from: label)
+            rect.size.width = max(0, min(rect.width, label.intrinsicContentSize.width))
+            return rect
+        }
+        return convert(icon.bounds, from: icon)
+            .union(visibleBounds(of: title))
+            .union(visibleBounds(of: detail))
+    }
 
     static func make(in tableView: NSTableView, title: String, detail: String,
                      image: NSImage? = nil) -> SearchHitCellView {

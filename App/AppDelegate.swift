@@ -1,5 +1,6 @@
 import AppKit
 import Sparkle
+import RenderKit
 import VaultStore
 
 @main
@@ -21,6 +22,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var windowController: MainWindowController?
     private var session: VaultSession?
+    private var themeDebugPanel: ThemeDebugPanel?
+    private var themeRefreshScheduled = false
+    private var editorBackdropSettings = EditorBackdropSettings()
 
     /// Sparkle auto-updater: checks the GitHub-hosted appcast in the
     /// background and offers updates in place.
@@ -36,11 +40,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case "light": NSApp.appearance = NSAppearance(named: .aqua)
         default: break
         }
+        if ThemeDebugPanel.isRequested {
+            AppColors.enableDebugMode()
+            NotificationCenter.default.addObserver(self, selector: #selector(themeColorsChanged), name: AppColors.didChange, object: nil)
+        }
         NSApp.mainMenu = MainMenu.build(updaterController: updaterController)
         openVault(at: resolveVaultURL())
         NSApp.activate()
         DebugSnapshot.armIfRequested()
         SelfTest.armIfRequested(session: self.session)
+        if ThemeDebugPanel.isRequested { showThemeDebug(nil) }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
@@ -61,6 +70,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let wc = MainWindowController(session: session)
         windowController = wc
+        wc.onBackdropSettingsChange = { [weak self, weak wc] settings in
+            guard let self, let wc, self.windowController === wc else { return }
+            self.editorBackdropSettings = settings
+            self.themeDebugPanel?.syncBackdropControls()
+        }
+        wc.setEditorBackdropSettings(editorBackdropSettings)
         wc.showWindow(nil)
     }
 
@@ -100,6 +115,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // MARK: Actions
+
+    @objc func showThemeDebug(_ sender: Any?) {
+        guard ThemeDebugPanel.isRequested else { return }
+        if themeDebugPanel == nil {
+            themeDebugPanel = ThemeDebugPanel(
+                backdropSettings: { [weak self] in self?.editorBackdropSettings ?? EditorBackdropSettings() },
+                backendDescription: { [weak self] in self?.windowController?.editorBackdropBackendDescription ?? "Open a project to preview" },
+                onBackdropChange: { [weak self] settings in self?.windowController?.setEditorBackdropSettings(settings) }
+            )
+        }
+        themeDebugPanel?.present(over: windowController?.window)
+    }
+
+    @objc private func themeColorsChanged() {
+        // Coalesce continuous picker events, especially in large notes.
+        guard !themeRefreshScheduled else { return }
+        themeRefreshScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            self?.themeRefreshScheduled = false
+            self?.windowController?.refreshThemeColors()
+        }
+    }
 
     @objc func changeVault(_ sender: Any?) {
         let panel = NSOpenPanel()

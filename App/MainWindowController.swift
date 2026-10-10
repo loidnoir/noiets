@@ -1,6 +1,7 @@
 import AppKit
 import IndexKit
 import MarkdownKit
+import RenderKit
 import UniformTypeIdentifiers
 import VaultStore
 import VimKit
@@ -33,6 +34,11 @@ final class MainWindowController: NSWindowController {
     }()
     private var sidebarItem: NSSplitViewItem?
     private var inspectorItem: NSSplitViewItem?
+    var onBackdropSettingsChange: ((EditorBackdropSettings) -> Void)?
+    private let windowBlur = WindowBackgroundBlur()
+    private(set) var editorBackdropSettings = EditorBackdropSettings()
+    private var backdropRenderMode: ContentBackdropRenderMode = .opaque
+    private var fullScreenTransition = false
 
     init(session: VaultSession) {
         self.session = session
@@ -58,6 +64,7 @@ final class MainWindowController: NSWindowController {
         window.tabbingMode = .disallowed
 
         super.init(window: window)
+        window.delegate = self
 
         // Seamless panes: no drawn divider, the color edge is the separation.
         let seamless = SeamlessSplitView()
@@ -89,6 +96,7 @@ final class MainWindowController: NSWindowController {
         splitVC.splitView.dividerStyle = .thin
         window.contentViewController = splitVC
         hostVC.show(editorVC)
+        hostVC.onChange = { [weak self] in self?.updateEditorWindowBackdrop() }
 
         sidebarVC.onSelectNote = { [weak self] url in self?.open(noteAt: url) }
         session.onCurrentNoteContentChanged = { [weak self] in
@@ -178,16 +186,33 @@ final class MainWindowController: NSWindowController {
         // first open below already needs it.
         session.startIndexing()
 
-        if let first = session.firstNote() {
-            open(noteAt: first)
-            sidebarVC.select(url: first, notify: false)
+        if let initialNote = session.noteToOpenOnLaunch() {
+            open(noteAt: initialNote)
+            sidebarVC.select(url: initialNote, notify: false)
         }
         startObservingFocus()
+        for name in [NSWindow.didBecomeKeyNotification, NSWindow.willEnterFullScreenNotification,
+                     NSWindow.willExitFullScreenNotification, NSWindow.didEnterFullScreenNotification,
+                     NSWindow.didExitFullScreenNotification] {
+            NotificationCenter.default.addObserver(self, selector: #selector(windowBackdropChanged(_:)), name: name, object: window)
+        }
+        NotificationCenter.default.addObserver(self, selector: #selector(windowBackdropClosing), name: NSWindow.willCloseNotification, object: window)
+        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(accessibilityDisplayChanged),
+            name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil)
 
         if ProcessInfo.processInfo.environment["NOIETS_SHOW_INSPECTOR"] == "1" {
             inspector.isCollapsed = false
         }
         applyDevHooks()
+    }
+
+    func refreshThemeColors() {
+        editorVC.refreshThemeColors()
+        updateEditorWindowBackdrop()
+        AppIcons.invalidateThemeCache()
+        updateVimBar(mode: nil)
+        if let content = window?.contentView { UITheme.repaintColors(in: content, excluding: editorVC.editor.textView) }
+        PalettePanel.shared.refreshThemeColors()
     }
 
     /// Dev-only: NOIETS_OPEN=<link target> opens a note by name;
@@ -489,6 +514,78 @@ final class MainWindowController: NSWindowController {
         }
     }
 
+    /// A command-palette setting, not a replacement for the ⌘P shortcut.
+    func toggleGlassEditorBackground() {
+        var settings = editorBackdropSettings
+        settings.isEnabled.toggle()
+        setEditorBackdropSettings(settings)
+    }
+
+    func setEditorBackdropSettings(_ settings: EditorBackdropSettings) {
+        editorBackdropSettings = settings
+        updateEditorWindowBackdrop()
+    }
+
+    var editorBackdropBackendDescription: String {
+        switch backdropRenderMode {
+        case .ghostty: return editorBackdropSettings.blurRadius == 0 ? "Transparency only — radius 0" : "Ghostty / WindowServer"
+        case .appKitFallback: return "AppKit fallback — radius control unavailable"
+        case .opaque:
+            if !editorBackdropSettings.isEnabled { return "Transparency off" }
+            if NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency { return "Opaque — Reduce Transparency is on" }
+            if editorBackdropSettings.backgroundOpacity >= 1 { return "Opaque — background opacity is 100%" }
+            if fullScreenTransition || window?.styleMask.contains(.fullScreen) == true { return "Opaque in native fullscreen, like Ghostty" }
+            return "Opaque — WindowServer blur could not be cleared"
+        }
+    }
+
+    @objc private func accessibilityDisplayChanged() { updateEditorWindowBackdrop() }
+
+    @objc private func windowBackdropChanged(_ notification: Notification) {
+        if notification.name == NSWindow.willEnterFullScreenNotification || notification.name == NSWindow.willExitFullScreenNotification {
+            fullScreenTransition = true
+        } else if notification.name != NSWindow.didBecomeKeyNotification {
+            fullScreenTransition = false
+        }
+        updateEditorWindowBackdrop()
+    }
+    @objc private func windowBackdropClosing() {
+        if let window { windowBlur.clear(from: window) }
+    }
+
+    private func updateEditorWindowBackdrop() {
+        guard let window else { return }
+        let requested = editorBackdropSettings.isEnabled && editorBackdropSettings.backgroundOpacity < 1
+            && !NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+            && !window.styleMask.contains(.fullScreen) && !fullScreenTransition
+        let mode: ContentBackdropRenderMode
+        if requested {
+            window.isOpaque = false
+            // Ghostty uses a tiny non-zero alpha instead of .clear for the
+            // WindowServer blur/shadow path. The content host supplies the tint.
+            window.backgroundColor = NSColor.white.withAlphaComponent(0.001)
+            hostVC.setBackdrop(editorBackdropSettings, mode: .ghostty) // Remove any fallback material first.
+            if windowBlur.apply(radius: editorBackdropSettings.blurRadius, to: window) {
+                mode = .ghostty
+            } else if windowBlur.clear(from: window) {
+                mode = .appKitFallback
+            } else {
+                mode = .opaque // Fail closed rather than retain an old radius.
+            }
+        } else {
+            windowBlur.clear(from: window)
+            mode = .opaque
+        }
+        window.isOpaque = mode == .opaque
+        window.backgroundColor = mode == .opaque ? .windowBackgroundColor
+            : (mode == .ghostty ? NSColor.white.withAlphaComponent(0.001) : .clear)
+        backdropRenderMode = mode
+        hostVC.setBackdrop(editorBackdropSettings, mode: mode)
+        editorVC.setBackgroundTransparent(mode != .opaque)
+        window.contentView?.needsDisplay = true
+        onBackdropSettingsChange?(editorBackdropSettings)
+    }
+
     // MARK: Overlays
 
     @objc func quickOpen(_: Any?) {
@@ -515,7 +612,7 @@ final class MainWindowController: NSWindowController {
         }
     }
 
-    private func paletteItems(for query: String) -> [PalettePanel.Item] {
+    func paletteItems(for query: String) -> [PalettePanel.Item] {
         let q = query.lowercased().trimmingCharacters(in: .whitespaces)
 
         // Tag browsing: "#" prefix lists tags.
@@ -535,6 +632,7 @@ final class MainWindowController: NSWindowController {
                 }
         }
 
+        let glassTitle = "Toggle transparency"
         // (title, SF fallback, custom icon, action)
         let commands: [(String, String, NSImage?, @MainActor () -> Void)] = [
             ("Add Note", "square.and.pencil", AppIcons.addDocument(size: 18),
@@ -545,6 +643,8 @@ final class MainWindowController: NSWindowController {
              { [weak self] in self?.sidebarVC.selectFixed(.trash) }),
             ("Toggle Sidebar", "sidebar.left", AppIcons.sidebar(size: 18),
              { [weak self] in self?.toggleSidebarPane(nil) }),
+            (glassTitle, "circle.lefthalf.filled", nil,
+             { [weak self] in self?.toggleGlassEditorBackground() }),
             ("Reveal in Finder", "finder", AppIcons.finder(size: 18),
              { [weak self] in self?.revealInFinder(nil) }),
             ("Open Docs", "book", AppIcons.docs(size: 18),
@@ -554,11 +654,30 @@ final class MainWindowController: NSWindowController {
         ]
         return
             commands
-            .filter { q.isEmpty || $0.0.lowercased().contains(q) }
-            .map { cmd in
-                PalettePanel.Item(symbol: cmd.1, title: cmd.0, subtitle: nil,
-                                  image: cmd.2, action: cmd.3)
+            .filter {
+                if $0.0 == glassTitle {
+                    let keywords = "toggle glass editor background transparent transparency translucent blur blurred setting"
+                    return q.split(whereSeparator: \.isWhitespace).allSatisfy { keywords.contains($0) }
+                }
+                return q.isEmpty || $0.0.lowercased().contains(q)
             }
+            .map { cmd in
+                PalettePanel.Item(symbol: cmd.1, title: cmd.0, subtitle: nil, image: cmd.2, action: cmd.3)
+            }
+    }
+}
+
+// MARK: - Fullscreen failure recovery
+
+extension MainWindowController: NSWindowDelegate {
+    func windowDidFailToEnterFullScreen(_ window: NSWindow) {
+        fullScreenTransition = false
+        updateEditorWindowBackdrop()
+    }
+
+    func windowDidFailToExitFullScreen(_ window: NSWindow) {
+        fullScreenTransition = false
+        updateEditorWindowBackdrop()
     }
 }
 
@@ -582,37 +701,5 @@ extension MainWindowController: NSMenuItemValidation {
             return session.currentNoteURL != nil
         }
         return true
-    }
-}
-
-/// Hosts one child view controller at a time in the second split pane.
-@MainActor
-final class ContentHostController: NSViewController {
-    private(set) var current: NSViewController?
-
-    override func loadView() {
-        view = NSView()
-        view.wantsLayer = true  // pane swaps crossfade via CATransition
-    }
-
-    func show(_ vc: NSViewController) {
-        guard vc !== current else { return }
-        if current != nil {
-            UIAnimation.fadeNextChange(of: view)
-        }
-        if let current {
-            current.view.removeFromSuperview()
-            current.removeFromParent()
-        }
-        addChild(vc)
-        vc.view.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(vc.view)
-        NSLayoutConstraint.activate([
-            vc.view.topAnchor.constraint(equalTo: view.topAnchor),
-            vc.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            vc.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            vc.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-        ])
-        current = vc
     }
 }

@@ -50,6 +50,7 @@ final class MermaidCanvasView: NSView {
             offset = .zero
             rasterCache.removeAll()
         }
+        if self.image !== image { rasterCache.removeAll() }
         self.image = image
         needsDisplay = true
     }
@@ -116,7 +117,7 @@ final class MermaidCanvasView: NSView {
 
     private func drawPill(_ label: String, trailing: CGFloat) -> CGRect {
         let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 11, weight: .semibold),
+            .font: AppFonts.font(ofSize: 11, weight: .semibold),
             .foregroundColor: theme.textColor.withAlphaComponent(0.9),
         ]
         let size = (label as NSString).size(withAttributes: attrs)

@@ -36,7 +36,14 @@ final class VaultSession {
     private var watcher: FSEventsWatcher?
     private var treeRescanWork: DispatchWorkItem?
 
-    private(set) var currentNoteURL: URL?
+    private(set) var currentNoteURL: URL? {
+        didSet {
+            if currentNoteURL?.standardizedFileURL != oldValue?.standardizedFileURL {
+                // Also follows in-app note/folder renames, moves, and trash.
+                LastOpenNoteStore.save(currentNoteURL, vault: vault)
+            }
+        }
+    }
     private var pendingText: (@MainActor () -> String)?
     private var saveWork: DispatchWorkItem?
 
@@ -147,6 +154,22 @@ final class VaultSession {
             return nil
         }
         return walk(tree)
+    }
+
+    /// Restore only a readable note still present in the visible vault tree.
+    /// Missing/deleted notes fall back to the usual first-note behavior.
+    func noteToOpenOnLaunch() -> URL? {
+        if let saved = LastOpenNoteStore.load(vault: vault) {
+            func find(_ node: FileNode) -> URL? {
+                if !node.isFolder { return node.url.path == saved.path ? node.url : nil }
+                for child in node.children {
+                    if let found = find(child) { return found }
+                }
+                return nil
+            }
+            if let note = find(tree), readNote(at: note) != nil { return note }
+        }
+        return firstNote()
     }
 
     // MARK: Open / edit / save

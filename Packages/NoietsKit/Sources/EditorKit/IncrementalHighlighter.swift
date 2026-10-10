@@ -49,7 +49,7 @@ public final class IncrementalHighlighter: NSObject {
     /// the one column every list style and quote body aligns to. Tightened
     /// ~23% from the natural "- " advance.
     static func listTextInset(_ theme: EditorTheme) -> CGFloat {
-        let bold = NSFont.systemFont(ofSize: theme.baseFontSize, weight: .bold)
+        let bold = AppFonts.font(ofSize: theme.baseFontSize, weight: .bold)
         return (("- " as NSString).size(withAttributes: [.font: bold]).width + 4) * 0.77
     }
 
@@ -215,7 +215,8 @@ public final class IncrementalHighlighter: NSObject {
                 break
             }
         case .blockquote:
-            // Quotes read quieter than body text.
+            // Libron is reserved for quotes; headings/body use SF Pro.
+            storage.addAttribute(.font, value: theme.quoteFont, range: line.range)
             storage.addAttribute(.foregroundColor, value: theme.mutedColor, range: line.range)
         default:
             break
@@ -326,7 +327,7 @@ public final class IncrementalHighlighter: NSObject {
                                    length: 1)
                 let marker = text.substring(with: token.range) as NSString
                 if ordered {
-                    let medium = NSFont.systemFont(ofSize: theme.baseFontSize, weight: .medium)
+                    let medium = AppFonts.font(ofSize: theme.baseFontSize, weight: .medium)
                     let kern = max(0, inset - marker.size(withAttributes: [.font: medium]).width)
                     if kern > 0 { storage.addAttribute(.kern, value: kern, range: last) }
                     break
@@ -444,7 +445,7 @@ public final class IncrementalHighlighter: NSObject {
             storage.addAttribute(.foregroundColor, value: theme.accentColor, range: range)
             if ordered {
                 storage.addAttribute(.font,
-                                     value: NSFont.systemFont(ofSize: theme.baseFontSize,
+                                     value: AppFonts.font(ofSize: theme.baseFontSize,
                                                               weight: .medium),
                                      range: range)
             } else {
@@ -493,12 +494,7 @@ public final class IncrementalHighlighter: NSObject {
     private func addTraits(_ traits: NSFontDescriptor.SymbolicTraits, storage: NSTextStorage, range: NSRange) {
         storage.enumerateAttribute(.font, in: range, options: []) { value, subRange, _ in
             let font = (value as? NSFont) ?? theme.baseFont
-            let descriptor = font.fontDescriptor.withSymbolicTraits(
-                font.fontDescriptor.symbolicTraits.union(traits)
-            )
-            if let merged = NSFont(descriptor: descriptor, size: font.pointSize) {
-                storage.addAttribute(.font, value: merged, range: subRange)
-            }
+            storage.addAttribute(.font, value: AppFonts.addingTraits(traits, to: font), range: subRange)
         }
     }
 }

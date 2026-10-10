@@ -2,6 +2,7 @@ import AppKit
 import IndexKit
 import MarkdownKit
 import VaultStore
+import RenderKit
 
 /// The toggleable right panel: document outline (headings) + backlinks.
 /// Flat, quiet, keyboard-light — informational, not chrome.
@@ -215,7 +216,7 @@ private enum InspectorCells {
             let c = NSTableCellView()
             c.identifier = id
             let label = NSTextField(labelWithString: "")
-            label.font = .systemFont(ofSize: 11, weight: .semibold)
+            label.font = AppFonts.font(ofSize: 11, weight: .semibold)
             label.textColor = UITheme.sidebarSecondaryText
             label.translatesAutoresizingMaskIntoConstraints = false
             c.addSubview(label)
@@ -248,7 +249,7 @@ private enum InspectorCells {
             let c = NSTableCellView()
             c.identifier = id
             let label = NSTextField(labelWithString: "")
-            label.font = .systemFont(ofSize: 12)
+            label.font = AppFonts.font(ofSize: 12)
             label.textColor = .tertiaryLabelColor
             label.translatesAutoresizingMaskIntoConstraints = false
             c.addSubview(label)
@@ -271,10 +272,10 @@ private final class TwoLineCell: NSTableCellView {
 
     init(hasSubtitle: Bool) {
         super.init(frame: .zero)
-        title.font = .systemFont(ofSize: 12.5)
+        title.font = AppFonts.font(ofSize: 12.5)
         title.textColor = UITheme.sidebarPrimaryText
         title.lineBreakMode = .byTruncatingTail
-        subtitle.font = .systemFont(ofSize: 11)
+        subtitle.font = AppFonts.font(ofSize: 11)
         subtitle.textColor = UITheme.sidebarSecondaryText
         subtitle.lineBreakMode = .byTruncatingTail
         subtitle.isHidden = !hasSubtitle
@@ -299,7 +300,7 @@ private final class TwoLineCell: NSTableCellView {
 
     func configure(title: String, subtitle: String?, weight: NSFont.Weight, indent: CGFloat) {
         self.title.stringValue = title
-        self.title.font = .systemFont(ofSize: 12.5, weight: weight)
+        self.title.font = AppFonts.font(ofSize: 12.5, weight: weight)
         if let subtitle {
             self.subtitle.stringValue = subtitle
         }

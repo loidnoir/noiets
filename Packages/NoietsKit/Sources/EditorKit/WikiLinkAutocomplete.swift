@@ -1,4 +1,5 @@
 import AppKit
+import RenderKit
 
 /// Small completion popup that appears while typing inside `[[…`. Suggestion
 /// data comes from an injected provider (the app backs it with the index).
@@ -146,7 +147,7 @@ extension WikiLinkAutocomplete: NSTableViewDataSource, NSTableViewDelegate {
             let c = NSTableCellView()
             c.identifier = id
             let label = NSTextField(labelWithString: "")
-            label.font = .systemFont(ofSize: 13)
+            label.font = AppFonts.font(ofSize: 13)
             label.lineBreakMode = .byTruncatingTail
             label.translatesAutoresizingMaskIntoConstraints = false
             c.addSubview(label)

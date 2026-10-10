@@ -1,0 +1,8 @@
+# Bundled fonts
+
+- **Libron v0.31**: unmodified desktop TTFs from https://github.com/nicoverbruggen/libron/releases/tag/v0.31 (`Libron.zip`, SHA-256 `ce9a355b46b11c2cbe158e9149ee13a3fa813ca28661d878723d72f477324033`). License: `Libron-OFL.txt`.
+- **Montserrat Armenian**: unmodified Regular, Medium, SemiBold and Bold OTFs from Sam's `Downloads/fonter.am_montserrat-armenian` folder, as requested. The fonts' embedded metadata states SIL OFL 1.1 and Copyright 2011–2016 The Montserrat Project Authors. That notice is preserved in `Montserrat-Armenian-OFL.txt`. No italic face was supplied; Armenian emphasis uses the available upright face.
+
+`AppFonts` registers bundled fonts only for the running process. App UI, body text and Markdown headings (`#` through `######`) prefer the locally installed **SF Pro**, with the macOS system font as fallback; Libron is reserved for blockquotes (`>`). Armenian text prefers the locally installed **SF Armenian** in both font families, with Montserrat Armenian retained as fallback on Macs without the installed font. Variable SF fonts use optical sizing matched to the text's point size. Code, line numbers and Vim mode indicators keep their existing monospaced font.
+
+Apple fonts are looked up by their installed names, never copied into the repository or app bundle: Apple's downloadable-font license prohibits embedding. For this local trial the installed files are `/Library/Fonts/SF-Pro.ttf`, `SF-Pro-Italic.ttf`, and `SF-Armenian.ttf`. WebKit diagrams reference these via CSS `local()` and embed only the OFL Montserrat fallback. System-owned file pickers and exported HTML/PDF retain their existing styling.

@@ -25,12 +25,13 @@ let package = Package(
         .target(name: "RenderKit", dependencies: [
             "SharedModel",
             .product(name: "SwiftMath", package: "SwiftMath"),
-        ], resources: [.copy("Resources/mermaid.min.js")]),
+        ], resources: [.copy("Resources/mermaid.min.js"), .copy("Resources/Fonts")]),
         .target(name: "IndexKit", dependencies: [
             "SharedModel", "VaultStore", "MarkdownKit",
             .product(name: "GRDB", package: "GRDB.swift"),
         ]),
         .target(name: "EditorKit", dependencies: ["SharedModel", "MarkdownKit", "VimKit", "RenderKit"]),
+        .testTarget(name: "EditorKitTests", dependencies: ["EditorKit", "RenderKit"]),
         .testTarget(name: "MarkdownKitTests", dependencies: ["MarkdownKit"]),
         .testTarget(name: "VimKitTests", dependencies: ["VimKit"]),
         .testTarget(name: "IndexKitTests", dependencies: ["IndexKit"]),

@@ -36,7 +36,7 @@ test:
 	cd Packages/NoietsKit && swift test
 
 run: build
-	open $(APP)
+	open $(APP) $(if $(ARGS),--args $(ARGS))
 
 clean:
 	rm -rf $(DERIVED) Packages/NoietsKit/.build

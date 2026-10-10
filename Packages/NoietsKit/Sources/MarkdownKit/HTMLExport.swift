@@ -15,13 +15,17 @@ public enum HTMLExport {
         }
         var container = Container.none
         var hasMermaid = false
+        var quoteParagraphOpen = false
 
         func close() {
             switch container {
             case .none: break
             case .ul: body.append("</ul>")
             case .ol: body.append("</ol>")
-            case .blockquote: body.append("</blockquote>")
+            case .blockquote:
+                if quoteParagraphOpen { body.append("</p>") }
+                quoteParagraphOpen = false
+                body.append("</blockquote>")
             case .pre: body.append("</code></pre>")
             case .mermaid: body.append("</div>")
             case .table: body.append("</tbody></table>")
@@ -96,8 +100,14 @@ public enum HTMLExport {
             case .blockquote(_, let contentStart):
                 ensure(.blockquote)
                 let end = line.contentRange.location + line.contentRange.length
-                if contentStart < end {
-                    body.append("<p>\(inlineHTML(ns, range: NSRange(location: contentStart, length: end - contentStart)))</p>")
+                let range = NSRange(location: contentStart, length: end - contentStart)
+                if ns.substring(with: range).trimmingCharacters(in: .whitespaces).isEmpty {
+                    if quoteParagraphOpen { body.append("</p>") }
+                    quoteParagraphOpen = false
+                } else {
+                    if !quoteParagraphOpen { body.append("<p>") }
+                    quoteParagraphOpen = true
+                    body.append(inlineHTML(ns, range: range))
                 }
             case .tableRow:
                 let isHeader = index + 1 < scan.lines.count && {
@@ -145,7 +155,7 @@ public enum HTMLExport {
         th, td { border-bottom: 1px solid #ddd; text-align: left; padding: 6px 14px 6px 0; }
         th { border-bottom-width: 2px; }
         mark { background: #ffef9e; }
-        a { color: #2069e0; text-decoration: none; }
+        a { color: #14a4c4; text-decoration: none; }
         hr { border: none; border-top: 1px solid #ddd; margin: 2em 0; }
         .math { color: #8a4a55; font-style: italic; }
         .mermaid svg { max-width: 100%; }

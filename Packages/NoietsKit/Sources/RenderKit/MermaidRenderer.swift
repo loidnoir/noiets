@@ -126,12 +126,16 @@ public final class MermaidRenderer: NSObject {
         // background so the captured image blends into the canvas. (A
         // 'transparent' body just comes out white.)
         document.body.style.background = bg;
+        await Promise.all([
+            document.fonts.load(size + 'px "Noiets SF Pro"'),
+            document.fonts.load(size + 'px "Noiets Armenian"', 'Հայերեն'),
+        ]);
         mermaid.initialize({
             startOnLoad: false,
             securityLevel: 'strict',
             suppressErrorRendering: true,
             theme: dark ? 'dark' : 'neutral',
-            fontFamily: 'ui-sans-serif, -apple-system, Helvetica, sans-serif',
+            fontFamily: '"Noiets Armenian", "Noiets SF Pro", ui-sans-serif, -apple-system, Helvetica, sans-serif',
             themeVariables: { fontSize: size + 'px' },
         });
         let svg;
@@ -241,7 +245,8 @@ public final class MermaidRenderer: NSObject {
         webView = view
         let html = """
         <!DOCTYPE html><html><head><meta charset="utf-8">
-        <style>body { margin: 0 } #host { display: inline-block }</style>
+        <style>\(AppFonts.webCSS)
+        body { margin: 0 } #host { display: inline-block }</style>
         <script>\(mermaidJS)</script>
         </head><body><div id="host"></div></body></html>
         """

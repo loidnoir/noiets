@@ -71,6 +71,7 @@ public struct BlockScan: Sendable {
         let length = text.length
         let frontmatterEnd = Frontmatter.parse(in: text as String).map(\.range.length) ?? 0
         var state: State = .normal
+        var quoteParagraphOpen = false
 
         var location = 0
         while location < length {
@@ -79,12 +80,30 @@ public struct BlockScan: Sendable {
                               for: NSRange(location: location, length: 0))
             let range = NSRange(location: start, length: end - start)
             let contentRange = NSRange(location: start, length: contentsEnd - start)
-            let kind = classify(
+            var kind = classify(
                 text, contentRange: contentRange, state: &state,
                 inFrontmatter: start < frontmatterEnd,
                 isFrontmatterDelimiter: start == 0 || contentsEnd == frontmatterEnd - 1
                     || end == frontmatterEnd
             )
+            switch kind {
+            case .blockquote(_, let contentStart):
+                // Only an open paragraph permits marker-less (lazy) quote
+                // continuations. An empty quote or a heading/fence does not.
+                var innerState: State = .normal
+                let inner = classify(text, contentRange: NSRange(location: contentStart, length: contentsEnd - contentStart),
+                                     state: &innerState, inFrontmatter: false, isFrontmatterDelimiter: false)
+                switch inner {
+                case .paragraph: quoteParagraphOpen = true
+                case .listItem(_, _, _, let start): quoteParagraphOpen = start < contentsEnd
+                default: quoteParagraphOpen = false
+                }
+            case .paragraph where quoteParagraphOpen:
+                kind = .blockquote(markerRange: NSRange(location: start, length: 0), contentStart: start)
+            default:
+                // A blank line or another block terminates the lazy run.
+                quoteParagraphOpen = false
+            }
             lines.append(Line(range: range, contentRange: contentRange, kind: kind))
             if end == location { break } // safety
             location = end

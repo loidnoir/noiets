@@ -1,6 +1,7 @@
 import AppKit
 import EditorKit
 import IndexKit
+import RenderKit
 
 /// The list view behind the Search / Recent sidebar items (and tag browsing
 /// from the palette). Lives in the editor pane; opening a row swaps back to
@@ -54,11 +55,12 @@ final class SearchViewController: NSViewController {
 
     override func loadView() {
         let theme = EditorTheme.standard()
-        let container = ColorView(color: theme.background)
+        // The content host supplies the shared opaque/glass backdrop.
+        let container = ColorView(color: .clear)
         view = container
 
         searchField.placeholderString = "Search project"
-        searchField.font = .systemFont(ofSize: 15)
+        searchField.font = AppFonts.font(ofSize: 15)
         searchField.focusRingType = .none
         searchField.target = self
         searchField.action = #selector(queryChanged)
@@ -70,7 +72,7 @@ final class SearchViewController: NSViewController {
             self?.handleListKey(event) ?? false
         }
 
-        headerLabel.font = .systemFont(ofSize: 22, weight: .bold)
+        headerLabel.font = AppFonts.font(ofSize: 22, weight: .bold)
         headerLabel.textColor = theme.textColor
         headerLabel.translatesAutoresizingMaskIntoConstraints = false
 
@@ -98,8 +100,8 @@ final class SearchViewController: NSViewController {
         // anywhere in the window while visible (⌘S is Toggle Sidebar).
         saveButton.bezelStyle = .inline
         saveButton.isBordered = false
-        saveButton.font = .systemFont(ofSize: 12, weight: .medium)
-        saveButton.contentTintColor = UITheme.modeNormalText
+        saveButton.font = AppFonts.font(ofSize: 12, weight: .medium)
+        saveButton.contentTintColor = UITheme.accent
         saveButton.target = self
         saveButton.action = #selector(saveViewQuery)
         saveButton.keyEquivalent = "\r"
@@ -224,10 +226,12 @@ final class SearchViewController: NSViewController {
         alert.addButton(withTitle: "Save")
         alert.addButton(withTitle: "Cancel")
         let field = NSTextField(string: "")
+        field.font = AppFonts.font(ofSize: NSFont.systemFontSize)
         field.placeholderString = "View name"
         field.frame = NSRect(x: 0, y: 0, width: 240, height: 24)
         alert.accessoryView = field
         alert.window.initialFirstResponder = field
+        UITheme.styleAlert(alert)
         alert.beginSheetModal(for: window) { [weak self] response in
             guard let self else { return }
             let name = field.stringValue.trimmingCharacters(in: .whitespaces)
@@ -470,6 +474,7 @@ final class SearchViewController: NSViewController {
         alert.messageText = "Move “\(title)” to Trash?"
         alert.addButton(withTitle: "Move to Trash")
         alert.addButton(withTitle: "Cancel")
+        UITheme.styleAlert(alert)
         alert.beginSheetModal(for: window) { [weak self] response in
             guard let self, response == .alertFirstButtonReturn else {
                 self?.focusList()

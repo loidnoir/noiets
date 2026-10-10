@@ -240,7 +240,9 @@ public final class VimEngine {
             case "d", "u":
                 // Half-page scroll, vim-style: caret moves with the view.
                 let half = max(1, target.visibleLineCount() / 2)
-                moveVertically(lines: key.characters == "d" ? half : -half)
+                target.withHalfPageScroll {
+                    self.moveVertically(lines: key.characters == "d" ? half : -half)
+                }
             default:
                 break
             }
@@ -521,10 +523,15 @@ public final class VimEngine {
         case .wordEnd(let big):
             return (Motions.wordEnd(t, from: position, count: n, big: big), true)
         case .lineStart:
-            return (Motions.lineStart(t, at: position), false)
+            return (target.visualLineRange(at: position).location, false)
         case .lineEnd:
-            let end = Motions.lineContentEnd(t, at: position)
-            return forOperator ? (end, false) : (max(Motions.lineStart(t, at: position), end - 1), false)
+            let row = target.visualLineRange(at: position)
+            let end = NSMaxRange(row)
+            if forOperator { return (end, false) }
+            // A block caret rests on the last whole character, never a UTF-16
+            // surrogate or combining mark inside it, nor the next wrap's start.
+            let last = row.length == 0 ? row.location : t.rangeOfComposedCharacterSequence(at: end - 1).location
+            return (last, false)
         case .firstNonBlank:
             return (Motions.firstNonBlank(t, at: position), false)
         case .paragraphForward:

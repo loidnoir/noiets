@@ -1,6 +1,7 @@
 import AppKit
 import EditorKit
 import VaultStore
+import RenderKit
 
 /// Lists the vault's `.trash` folder with restore / delete-permanently,
 /// grouped into month sections by deletion date.
@@ -44,14 +45,15 @@ final class TrashViewController: NSViewController {
 
     override func loadView() {
         let theme = EditorTheme.standard()
-        let container = ColorView(color: theme.background)
+        // The content host supplies the shared opaque/glass backdrop.
+        let container = ColorView(color: .clear)
         view = container
 
-        headerLabel.font = .systemFont(ofSize: 22, weight: .bold)
+        headerLabel.font = AppFonts.font(ofSize: 22, weight: .bold)
         headerLabel.textColor = theme.textColor
         headerLabel.translatesAutoresizingMaskIntoConstraints = false
 
-        emptyLabel.font = .systemFont(ofSize: 14)
+        emptyLabel.font = AppFonts.font(ofSize: 14)
         emptyLabel.textColor = .secondaryLabelColor
         emptyLabel.translatesAutoresizingMaskIntoConstraints = false
 
@@ -144,6 +146,7 @@ final class TrashViewController: NSViewController {
 
     private func buildMenu() -> NSMenu {
         let menu = NSMenu()
+        UITheme.styleMenu(menu)
         let restore = NSMenuItem(title: "Restore", action: #selector(restoreClicked), keyEquivalent: "")
         restore.target = self
         let delete = NSMenuItem(title: "Delete Permanently", action: #selector(deleteClicked), keyEquivalent: "")
@@ -178,6 +181,7 @@ final class TrashViewController: NSViewController {
         alert.informativeText = "This cannot be undone."
         alert.addButton(withTitle: "Delete Permanently")
         alert.addButton(withTitle: "Cancel")
+        UITheme.styleAlert(alert)
         alert.beginSheetModal(for: window) { [weak self] response in
             guard let self else { return }
             if response == .alertFirstButtonReturn {

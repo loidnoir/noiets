@@ -94,9 +94,14 @@ enum MainMenu {
         let windowMenu = NSMenu(title: "Window")
         windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
         windowMenu.addItem(withTitle: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
+        if ThemeDebugPanel.isRequested {
+            windowMenu.addItem(.separator())
+            windowMenu.addItem(withTitle: "Theme Colors…", action: #selector(AppDelegate.showThemeDebug(_:)), keyEquivalent: "")
+        }
         main.addItem(submenu(windowMenu, title: "Window"))
         NSApp.windowsMenu = windowMenu
 
+        UITheme.styleMenu(main)
         return main
     }
 

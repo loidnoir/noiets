@@ -32,7 +32,26 @@ public protocol VimTextTarget: AnyObject {
     /// approximate with logical lines.
     func moveCaretVisually(lines: Int)
 
+    /// Execute a half-page motion, keeping the caret's viewport position and
+    /// animating the resulting scroll. Headless targets just run the motion.
+    func withHalfPageScroll(_ movement: () -> Void)
+
+    /// Source range of the displayed row containing this UTF-16 position,
+    /// excluding hard line terminators. Used by 0/$ and their operators;
+    /// whole-line operations (dd/yy) remain logical-line based.
+    func visualLineRange(at position: Int) -> NSRange
+
     /// Character location of the 1-based visual row (`:N`). Wrapped rows
     /// count individually; headless targets treat rows as logical lines.
     func characterLocation(ofVisualRow row: Int) -> Int?
+}
+
+public extension VimTextTarget {
+    func withHalfPageScroll(_ movement: () -> Void) { movement() }
+
+    /// Headless targets have no wrapping, so visual and logical rows coincide.
+    func visualLineRange(at position: Int) -> NSRange {
+        let start = Motions.lineStart(text, at: position)
+        return NSRange(location: start, length: Motions.lineContentEnd(text, at: position) - start)
+    }
 }

@@ -76,7 +76,9 @@ public enum MarkdownScan {
             }
 
         case .blockquote(let markerRange, let contentStart):
-            tokens.append(Token(.blockquoteMarker, markerRange))
+            if markerRange.length > 0 {
+                tokens.append(Token(.blockquoteMarker, markerRange))
+            }
             let contentEnd = line.contentRange.location + line.contentRange.length
             if contentStart < contentEnd {
                 let contentRange = NSRange(location: contentStart, length: contentEnd - contentStart)

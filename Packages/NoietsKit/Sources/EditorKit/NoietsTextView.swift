@@ -17,6 +17,103 @@ public final class NoietsTextView: NSTextView {
     // Sticky visual column for j/k (see moveCaretVisually).
     var verticalGoalX: CGFloat?
     var inVerticalMove = false
+    /// Native j/k movement can make provisional selections before correcting
+    /// its sticky column. The cursor trail should use only the final landing.
+    var onVisualMoveCompleted: (() -> Void)?
+
+    private struct QuoteLanding {
+        let paragraphStart: Int
+        let rowIndex: Int
+        let rowsFromEnd: Int
+    }
+    private var quoteLanding: QuoteLanding?
+    private var correctingVerticalLanding = false
+
+    private struct SmoothScroll {
+        let from: NSPoint
+        let to: NSPoint
+        let started: CFTimeInterval
+    }
+    private var smoothScroll: SmoothScroll?
+    private var smoothScrollTimer: Timer?
+    private var capturingHalfPageScroll = false
+    var isSmoothScrolling: Bool { smoothScroll != nil }
+
+    func cancelSmoothScrolling() {
+        smoothScrollTimer?.invalidate()
+        smoothScrollTimer = nil
+        smoothScroll = nil
+    }
+
+    /// Animate real clip bounds, so TextKit's viewport and newly exposed rows
+    /// stay live throughout the scroll (not a snapshot/layer-only animation).
+    func stepSmoothScroll(at time: CFTimeInterval) {
+        guard let scroll = smoothScroll, let scrollView = enclosingScrollView else {
+            cancelSmoothScrolling()
+            return
+        }
+        let progress = min(max((time - scroll.started) / 0.20, 0), 1)
+        let eased = 1 - pow(1 - progress, 3)
+        let clip = scrollView.contentView
+        var bounds = clip.bounds
+        bounds.origin = NSPoint(x: scroll.from.x + (scroll.to.x - scroll.from.x) * eased,
+                                y: scroll.from.y + (scroll.to.y - scroll.from.y) * eased)
+        clip.scroll(to: clip.constrainBoundsRect(bounds).origin)
+        scrollView.reflectScrolledClipView(clip)
+        if progress == 1 { cancelSmoothScrolling() }
+    }
+
+    public override func scrollWheel(with event: NSEvent) {
+        cancelSmoothScrolling()
+        super.scrollWheel(with: event)
+    }
+
+    /// Capture the preview row before revealing `>` rewraps the paragraph.
+    private func rememberQuoteLanding(at index: Int) {
+        guard let row = laidOutRow(at: index), row.fragment is QuoteBarFragment else { return }
+        quoteLanding = QuoteLanding(paragraphStart: row.paragraphStart, rowIndex: row.index,
+                                    rowsFromEnd: row.fragment.textLineFragments.count - row.index - 1)
+    }
+
+    private func reflowedQuoteRow(movingDown: Bool) -> (rect: CGRect, range: NSRange)? {
+        guard let landing = quoteLanding, let content = textContentStorage,
+              let location = content.location(content.documentRange.location, offsetBy: landing.paragraphStart),
+              let fragment = textLayoutManager?.textLayoutFragment(for: location),
+              !fragment.textLineFragments.isEmpty else { return nil }
+        let rows = fragment.textLineFragments
+        // Entering from below must still target the last row even if the
+        // source version has a different number of wraps than the preview.
+        let index = movingDown ? landing.rowIndex : rows.count - landing.rowsFromEnd - 1
+        return rowGeometry(in: fragment, at: min(max(index, 0), rows.count - 1),
+                           paragraphStart: landing.paragraphStart)
+    }
+
+    /// All wrap boundaries come from TextKit 2's shaped line fragments, not
+    /// estimated heights, logical paragraphs, or insertion hit-test affinity.
+    private func laidOutRow(at position: Int) -> (fragment: NSTextLayoutFragment, index: Int, paragraphStart: Int)? {
+        guard text.length > 0 else { return nil }
+        let index = min(max(position, 0), text.length - 1)
+        ensureLocalLayout(around: index)
+        guard let content = textContentStorage,
+              let location = content.location(content.documentRange.location, offsetBy: index),
+              let fragment = textLayoutManager?.textLayoutFragment(for: location) else { return nil }
+        let start = content.offset(from: content.documentRange.location, to: fragment.rangeInElement.location)
+        guard let row = fragment.textLineFragments.firstIndex(where: {
+            NSLocationInRange(index - start, $0.characterRange)
+        }) else { return nil }
+        return (fragment, row, start)
+    }
+
+    private func rowGeometry(in fragment: NSTextLayoutFragment, at index: Int,
+                             paragraphStart: Int) -> (rect: CGRect, range: NSRange) {
+        let row = fragment.textLineFragments[index]
+        let origin = textContainerOrigin
+        return (
+            row.typographicBounds.offsetBy(dx: fragment.layoutFragmentFrame.minX + origin.x,
+                                           dy: fragment.layoutFragmentFrame.minY + origin.y),
+            NSRange(location: paragraphStart + row.characterRange.location, length: row.characterRange.length)
+        )
+    }
 
     /// AppKit exposes a normalized selected range, not which edge the user is
     /// dragging. Keep the insertion-position anchor across native selection
@@ -68,6 +165,32 @@ public final class NoietsTextView: NSTextView {
         typingAttributes = theme.typingAttributes()
         defaultParagraphStyle = theme.defaultParagraphStyle
         textContainerInset = NSSize(width: 28, height: 28)
+    }
+
+    /// Code bands belong below AppKit's selection, not in the fragment's
+    /// glyph pass (which otherwise paints opaque code backgrounds over it).
+    public override func drawBackground(in rect: NSRect) {
+        super.drawBackground(in: rect)
+        guard let manager = textLayoutManager, let context = NSGraphicsContext.current?.cgContext else { return }
+        let origin = textContainerOrigin
+        let viewport = manager.textViewportLayoutController.viewportRange
+        context.saveGState()
+        context.clip(to: rect)
+        manager.enumerateTextLayoutFragments(from: viewport?.location ?? manager.documentRange.location, options: [.ensuresLayout]) { fragment in
+            let frame = fragment.layoutFragmentFrame.offsetBy(dx: origin.x, dy: origin.y)
+            if frame.minY > rect.maxY { return false }
+            if frame.intersects(rect), let code = fragment as? CodeBandFragment {
+                code.drawBand(at: frame.origin, in: context)
+            }
+            return true
+        }
+        context.restoreGState()
+    }
+
+    public override func didChangeText() {
+        super.didChangeText()
+        // Fence edits can add/remove bands well beyond the edited glyphs.
+        needsDisplay = true
     }
 
     // MARK: Vim routing
@@ -242,6 +365,7 @@ public final class NoietsTextView: NSTextView {
 
     public override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        if window == nil { cancelSmoothScrolling() }
         if window != nil, textLayoutManager == nil {
             Self.log.fault("TextKit 2 downgrade detected — NoietsTextView fell back to TextKit 1")
             assertionFailure("TextKit 2 downgrade detected")
@@ -251,6 +375,7 @@ public final class NoietsTextView: NSTextView {
     // MARK: Centered column
 
     public override func setFrameSize(_ newSize: NSSize) {
+        if abs(newSize.width - frame.width) > 0.5 { cancelSmoothScrolling() }
         super.setFrameSize(newSize)
         let horizontal = max(28, (newSize.width - theme.maxColumnWidth) / 2)
         if abs(textContainerInset.width - horizontal) > 0.5 {
@@ -301,7 +426,75 @@ extension NoietsTextView: VimTextTarget {
     }
 
     public func scrollCaretToVisible() {
+        if !capturingHalfPageScroll { cancelSmoothScrolling() }
         scrollRangeToVisible(selectedRange())
+    }
+
+    public func withHalfPageScroll(_ movement: () -> Void) {
+        let previousGoal = smoothScroll?.to
+        cancelSmoothScrolling()
+        guard let scrollView = enclosingScrollView, window != nil else {
+            movement()
+            return
+        }
+        let clip = scrollView.contentView
+        let from = clip.bounds.origin
+        let before = laidOutRow(at: vim?.displayCaret ?? selectedRange().location).map {
+            rowGeometry(in: $0.fragment, at: $0.index, paragraphStart: $0.paragraphStart).rect.minY
+        }
+        capturingHalfPageScroll = true
+        defer { capturingHalfPageScroll = false }
+        movement()
+        let after = laidOutRow(at: vim?.displayCaret ?? selectedRange().location).map {
+            rowGeometry(in: $0.fragment, at: $0.index, paragraphStart: $0.paragraphStart).rect.minY
+        }
+        var destination = clip.bounds
+        if let before, let after {
+            destination.origin = NSPoint(x: from.x, y: (previousGoal?.y ?? from.y) + after - before)
+        }
+        let to = clip.constrainBoundsRect(destination).origin
+        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+              abs(to.y - from.y) > 0.5 else {
+            clip.scroll(to: to)
+            scrollView.reflectScrolledClipView(clip)
+            return
+        }
+        // Native movement may scroll immediately. Restore in the same event
+        // turn, then glide from the actual current position; repeated Ctrl+D/U
+        // replaces the previous timer without snapping to its unfinished goal.
+        clip.scroll(to: from)
+        scrollView.reflectScrolledClipView(clip)
+        smoothScroll = SmoothScroll(from: from, to: to, started: CACurrentMediaTime())
+        let timer = Timer(timeInterval: 1.0 / 120, repeats: true) { [weak self] timer in
+            // This timer is registered exclusively on RunLoop.main.
+            let alive = MainActor.assumeIsolated {
+                guard let self else { return false }
+                self.stepSmoothScroll(at: CACurrentMediaTime())
+                return true
+            }
+            if !alive { timer.invalidate() }
+        }
+        smoothScrollTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    public func visualLineRange(at position: Int) -> NSRange {
+        let ns = text
+        if ns.length == 0 { return NSRange(location: 0, length: 0) }
+        if position >= ns.length, [0x0A, 0x0D].contains(ns.character(at: ns.length - 1)) {
+            return NSRange(location: ns.length, length: 0)
+        }
+        let range: NSRange
+        if let row = laidOutRow(at: position) {
+            range = rowGeometry(in: row.fragment, at: row.index, paragraphStart: row.paragraphStart).range
+        } else {
+            range = Motions.lineRange(ns, at: position)
+        }
+        var end = min(NSMaxRange(range), ns.length)
+        while end > range.location, [0x0A, 0x0D].contains(ns.character(at: end - 1)) {
+            end -= 1
+        }
+        return NSRange(location: range.location, length: end - range.location)
     }
 
     public func visibleLineCount() -> Int {
@@ -317,7 +510,7 @@ extension NoietsTextView: VimTextTarget {
     /// Forces real (non-estimated) layout for the logical line at `location`
     /// plus one line either side — cheap, local, and required before trusting
     /// character rects for caret movement.
-    private func ensureLocalLayout(around location: Int) {
+    func ensureLocalLayout(around location: Int) {
         guard let layoutManager = textLayoutManager,
               let contentStorage = textContentStorage else { return }
         let ns = string as NSString
@@ -341,7 +534,11 @@ extension NoietsTextView: VimTextTarget {
 
     public func moveCaretVisually(lines: Int) {
         inVerticalMove = true
-        defer { inVerticalMove = false }
+        defer {
+            quoteLanding = nil
+            inVerticalMove = false
+            onVisualMoveCompleted?()
+        }
 
         // Freshly opened documents may only have ESTIMATED layout around the
         // caret; estimated character rects put every wrapped row at nearly
@@ -353,14 +550,22 @@ extension NoietsTextView: VimTextTarget {
         verticalGoalX = goal
 
         for _ in 0..<abs(lines) {
+            let source = selectedRange().location
+            quoteLanding = nil
             if lines > 0 {
                 moveDown(nil)
             } else {
                 moveUp(nil)
             }
+            ensureLocalLayout(around: source)
+            ensureLocalLayout(around: selectedRange().location)
+            correctVerticalLanding(at: goal, movingDown: lines > 0)
         }
-        ensureLocalLayout(around: selectedRange().location)
+    }
 
+    private func correctVerticalLanding(at goal: CGFloat?, movingDown: Bool) {
+        correctingVerticalLanding = true
+        defer { correctingVerticalLanding = false }
         // Land on the destination visual line at the remembered x. The result
         // is clamped to the logical line moveDown/moveUp actually reached:
         // on an empty (or short) line a far-out x has no glyphs, and the hit
@@ -376,7 +581,9 @@ extension NoietsTextView: VimTextTarget {
                 forCharacterRange: NSRange(location: landed, length: 1), actualRange: nil
             )
             guard landedScreen != .zero else { return }
-            let lineRect = convert(window.convertFromScreen(landedScreen), from: nil)
+            let mappedRow = reflowedQuoteRow(movingDown: movingDown)
+            let lineRect = mappedRow?.rect ?? convert(window.convertFromScreen(landedScreen), from: nil)
+            let fallback = mappedRow?.range.location ?? landed
             let lineRange = ns.lineRange(for: NSRange(location: landed, length: 0))
             var contentEnd = lineRange.location + lineRange.length
             if contentEnd > lineRange.location,
@@ -384,7 +591,9 @@ extension NoietsTextView: VimTextTarget {
                 contentEnd -= 1
             }
             let index = characterIndexForInsertion(at: NSPoint(x: goal, y: lineRect.midY))
-            var clamped = min(max(index, lineRange.location), contentEnd)
+            let rowStart = mappedRow?.range.location ?? lineRange.location
+            let rowEnd = min(mappedRow.map { NSMaxRange($0.range) } ?? contentEnd, contentEnd)
+            var clamped = min(max(index, rowStart), rowEnd)
 
             // Wrap-boundary guard: a far-x hit on a wrapped row can return the
             // boundary index, whose character belongs to the NEXT visual row.
@@ -397,7 +606,7 @@ extension NoietsTextView: VimTextTarget {
                 if charScreen != .zero {
                     let charRect = convert(window.convertFromScreen(charScreen), from: nil)
                     if abs(charRect.midY - lineRect.midY) > lineRect.height / 2 {
-                        clamped = max(lineRange.location, clamped - 1)
+                        clamped = max(rowStart, clamped - 1)
                     }
                 }
             }
@@ -414,7 +623,7 @@ extension NoietsTextView: VimTextTarget {
                 if adjustedScreen != .zero {
                     let adjustedRect = convert(window.convertFromScreen(adjustedScreen), from: nil)
                     if abs(adjustedRect.midY - lineRect.midY) > lineRect.height / 2 {
-                        clamped = landed
+                        clamped = fallback
                     }
                 }
             }
@@ -432,9 +641,14 @@ extension NoietsTextView: VimTextTarget {
     ) {
         if !inVerticalMove {
             verticalGoalX = nil
+            if !capturingHalfPageScroll { cancelSmoothScrolling() }
         }
         if let range = ranges.first?.rangeValue, range.location != NSNotFound {
             let oldRange = selectedRange()
+            if inVerticalMove, !correctingVerticalLanding, range.length == 0,
+               range.location != oldRange.location {
+                rememberQuoteLanding(at: range.location)
+            }
             if range.length == 0 {
                 nativeSelectionAnchorPosition = range.location
                 vimSelectionEndpoints = nil

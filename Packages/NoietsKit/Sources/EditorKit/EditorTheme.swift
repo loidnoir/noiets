@@ -1,6 +1,8 @@
 import AppKit
+import RenderKit
 
-/// Editor visual constants — Things-3 calm: SF for prose, SF Mono for code,
+/// Editor visual constants — SF Pro prose/headings, Libron quotes,
+/// SF Armenian fallback (Montserrat when unavailable), SF Mono code,
 /// generous spacing, muted markers, no chrome.
 @MainActor
 public struct EditorTheme {
@@ -31,36 +33,26 @@ public struct EditorTheme {
             maxColumnWidth: 760,
             lineSpacing: 3.5,
             paragraphSpacing: 0, // paragraph gap == wrapped-line gap, consistent rhythm
-            textColor: dynamic(light: NSColor(white: 0.16, alpha: 1), dark: NSColor(white: 0.86, alpha: 1)),
-            mutedColor: dynamic(light: NSColor(white: 0.68, alpha: 1), dark: NSColor(white: 0.45, alpha: 1)),
-            accentColor: dynamic(light: NSColor(red: 0.13, green: 0.42, blue: 0.95, alpha: 1),
-                                 dark: NSColor(red: 0.35, green: 0.58, blue: 1.0, alpha: 1)),
-            codeColor: dynamic(light: NSColor(red: 0.72, green: 0.25, blue: 0.35, alpha: 1),
-                               dark: NSColor(red: 0.90, green: 0.51, blue: 0.55, alpha: 1)),
-            codeBackground: dynamic(light: NSColor(white: 0.935, alpha: 1),
-                                    dark: NSColor(red: 0.173, green: 0.180, blue: 0.204, alpha: 1)), // Sonokai bg0 #2C2E34
-            highlightBackground: dynamic(light: NSColor(red: 1.0, green: 0.95, blue: 0.60, alpha: 1),
-                                         dark: NSColor(red: 0.42, green: 0.37, blue: 0.12, alpha: 1)),
-            background: dynamic(light: NSColor(red: 0.972, green: 0.970, blue: 0.962, alpha: 1),
-                                dark: NSColor(white: 0.145, alpha: 1)),
-            codeKeyword: dynamic(light: NSColor(red: 0.61, green: 0.15, blue: 0.55, alpha: 1),
-                                 dark: NSColor(red: 0.988, green: 0.365, blue: 0.486, alpha: 1)), // red #FC5D7C
-            codeType: dynamic(light: NSColor(red: 0.16, green: 0.42, blue: 0.62, alpha: 1),
-                              dark: NSColor(red: 0.463, green: 0.800, blue: 0.878, alpha: 1)), // blue #76CCE0
-            codeString: dynamic(light: NSColor(red: 0.75, green: 0.28, blue: 0.16, alpha: 1),
-                                dark: NSColor(red: 0.906, green: 0.776, blue: 0.392, alpha: 1)), // yellow #E7C664
-            codeComment: dynamic(light: NSColor(white: 0.58, alpha: 1),
-                                 dark: NSColor(red: 0.498, green: 0.518, blue: 0.565, alpha: 1)), // grey #7F8490
-            codeNumber: dynamic(light: NSColor(red: 0.15, green: 0.45, blue: 0.40, alpha: 1),
-                                dark: NSColor(red: 0.702, green: 0.616, blue: 0.953, alpha: 1)), // purple #B39DF3
-            codeProperty: dynamic(light: NSColor(red: 0.16, green: 0.42, blue: 0.62, alpha: 1),
-                                  dark: NSColor(red: 0.620, green: 0.816, blue: 0.447, alpha: 1)) // green #9ED072
+            textColor: AppColors.color(.editorText),
+            mutedColor: AppColors.color(.muted),
+            accentColor: AppColors.primary,
+            codeColor: AppColors.color(.inlineCode),
+            codeBackground: AppColors.color(.codeBackground),
+            highlightBackground: AppColors.color(.highlightBackground),
+            background: AppColors.color(.editorBackground),
+            codeKeyword: AppColors.color(.codeKeyword),
+            codeType: AppColors.color(.codeType),
+            codeString: AppColors.color(.codeString),
+            codeComment: AppColors.color(.codeComment),
+            codeNumber: AppColors.color(.codeNumber),
+            codeProperty: AppColors.color(.codeProperty)
         )
     }
 
     // MARK: Fonts
 
-    public var baseFont: NSFont { .systemFont(ofSize: baseFontSize) }
+    public var baseFont: NSFont { AppFonts.font(ofSize: baseFontSize) }
+    public var quoteFont: NSFont { AppFonts.displayFont(ofSize: baseFontSize) }
     public var monoFont: NSFont { .monospacedSystemFont(ofSize: baseFontSize - 1.5, weight: .regular) }
 
     public func headingFont(level: Int) -> NSFont {
@@ -71,7 +63,7 @@ public struct EditorTheme {
         case 3: scale = 1.18
         default: scale = 1.05
         }
-        return .systemFont(ofSize: (baseFontSize * scale).rounded(), weight: level <= 2 ? .bold : .semibold)
+        return AppFonts.font(ofSize: (baseFontSize * scale).rounded(), weight: level <= 2 ? .bold : .semibold)
     }
 
     // MARK: Base attributes

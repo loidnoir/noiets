@@ -1,5 +1,6 @@
 import AppKit
 import EditorKit
+import RenderKit
 
 /// Hosts the EditorKit editing surface and connects it to the session's
 /// autosave pipeline.
@@ -8,7 +9,6 @@ final class EditorViewController: NSViewController {
     private let session: VaultSession
     let editor = MarkdownEditorView()
     private let emptyLabel = NSTextField(labelWithString: "No note selected")
-
     /// Fired (with the current text) on every edit — inspector outline refresh.
     var onEdited: ((String) -> Void)?
 
@@ -21,12 +21,13 @@ final class EditorViewController: NSViewController {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override func loadView() {
-        let container = ColorView(color: editor.theme.background)
+        // The content host owns the backdrop for every right-hand page.
+        let container = ColorView(color: .clear)
         view = container
 
         editor.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(editor)
-        emptyLabel.font = .systemFont(ofSize: 15)
+        emptyLabel.font = AppFonts.font(ofSize: 15)
         emptyLabel.textColor = .secondaryLabelColor
         emptyLabel.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(emptyLabel)
@@ -48,6 +49,14 @@ final class EditorViewController: NSViewController {
             self.session.noteEdited { editorView.string }
             self.onEdited?(editorView.string)
         }
+    }
+
+    func setBackgroundTransparent(_ transparent: Bool) {
+        editor.isBackgroundTransparent = transparent
+    }
+
+    func refreshThemeColors() {
+        editor.refreshThemeColors()
     }
 
     /// Read-only display (the built-in docs): rendered like a note, never

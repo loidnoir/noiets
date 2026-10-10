@@ -615,6 +615,22 @@ enum SelfTest {
         result["quickOpenVisible"] = PalettePanel.shared.isVisible
         PalettePanel.shared.dismiss()
         result["dismissed"] = !PalettePanel.shared.isVisible
+        let title = "Toggle transparency"
+        let aliases = ["glass", "blur", "transparent", "transparency", "editor background"]
+        result["glassSettingSearchable"] = aliases.allSatisfy {
+            wc.paletteItems(for: $0).contains { $0.title == title }
+        }
+        if let item = wc.paletteItems(for: "glass").first(where: { $0.title == title }) {
+            let before = wc.editorBackdropSettings
+            let opaque = wc.window?.isOpaque
+            item.action()
+            let enabledItem = wc.paletteItems(for: "glass").first(where: { $0.title == title })
+            result["glassCommandHasNoDetails"] = item.subtitle == nil && enabledItem?.subtitle == nil
+            result["glassSettingToggles"] = before.isEnabled != wc.editorBackdropSettings.isEnabled
+            item.action()
+            result["glassSettingRestores"] = wc.window?.isOpaque == opaque
+                && wc.editorBackdropSettings == before
+        }
         return result
     }
 

@@ -29,7 +29,6 @@ final class SidebarViewController: NSViewController {
     private let scrollView = NSScrollView()
     private let outlineView = SidebarOutlineView()
     private let modeBar = ColorView(color: UITheme.sidebarBackground)
-    private let modeBarLine = ColorView(color: UITheme.paneSeparator)
     private let modeLabel = NSTextField(labelWithString: "NORMAL")
     private var suppressSelectionCallback = false
     private var suppressExpansionBookkeeping = false
@@ -144,16 +143,13 @@ final class SidebarViewController: NSViewController {
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(scrollView)
 
-        // Vim mode bar: flat Things-style strip across the sidebar bottom,
-        // separated from the content by a hairline (no pill).
+        // Quiet, integrated status footer — not a prominent mode panel.
         modeBar.translatesAutoresizingMaskIntoConstraints = false
-        modeBarLine.translatesAutoresizingMaskIntoConstraints = false
-        modeLabel.font = .monospacedSystemFont(ofSize: 12.5, weight: .bold)
+        modeLabel.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
         modeLabel.textColor = UITheme.modeNormalText
         modeLabel.alignment = .center
         modeLabel.lineBreakMode = .byTruncatingTail
         modeLabel.translatesAutoresizingMaskIntoConstraints = false
-        modeBar.addSubview(modeBarLine)
         modeBar.addSubview(modeLabel)
         view.addSubview(modeBar)
 
@@ -169,18 +165,11 @@ final class SidebarViewController: NSViewController {
             modeBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             modeBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             modeBar.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            modeBar.heightAnchor.constraint(equalToConstant: 45),
+            modeBar.heightAnchor.constraint(equalToConstant: 24),
 
-            modeBarLine.topAnchor.constraint(equalTo: modeBar.topAnchor),
-            modeBarLine.leadingAnchor.constraint(equalTo: modeBar.leadingAnchor),
-            modeBarLine.trailingAnchor.constraint(equalTo: modeBar.trailingAnchor),
-            modeBarLine.heightAnchor.constraint(equalToConstant: 1),
-
-            modeLabel.centerXAnchor.constraint(equalTo: modeBar.centerXAnchor),
             modeLabel.centerYAnchor.constraint(equalTo: modeBar.centerYAnchor),
-            modeLabel.leadingAnchor.constraint(
-                greaterThanOrEqualTo: modeBar.leadingAnchor, constant: 8
-            ),
+            modeLabel.leadingAnchor.constraint(equalTo: modeBar.leadingAnchor, constant: 12),
+            modeLabel.trailingAnchor.constraint(equalTo: modeBar.trailingAnchor, constant: -12),
         ])
 
         rebuildItems()
@@ -277,6 +266,7 @@ final class SidebarViewController: NSViewController {
 
     private func buildContextMenu() -> NSMenu {
         let menu = NSMenu()
+        UITheme.styleMenu(menu)
         menu.autoenablesItems = true
         menu.addItem(item("Add Note", #selector(ctxNewNote(_:)), icon: AppIcons.addDocument(size: 15)))
         menu.addItem(item("Add Folder", #selector(ctxNewFolder(_:)), icon: AppIcons.addFolder(size: 15)))
@@ -675,6 +665,7 @@ final class SidebarViewController: NSViewController {
         alert.addButton(withTitle: "Move to Trash")
         alert.addButton(withTitle: "Cancel")
         let row = outlineView.selectedRowIndexes.first ?? outlineView.selectedRow
+        UITheme.styleAlert(alert)
         alert.beginSheetModal(for: window) { [weak self] response in
             guard let self else { return }
             self.exitTreeVisual()
@@ -705,6 +696,7 @@ final class SidebarViewController: NSViewController {
             "The saved query is removed from this project. Notes are not affected."
         alert.addButton(withTitle: "Delete View")
         alert.addButton(withTitle: "Cancel")
+        UITheme.styleAlert(alert)
         alert.beginSheetModal(for: window) { [weak self] response in
             guard let self else { return }
             if response == .alertFirstButtonReturn {
@@ -728,6 +720,7 @@ final class SidebarViewController: NSViewController {
         field.frame = NSRect(x: 0, y: 0, width: 240, height: 24)
         alert.accessoryView = field
         alert.window.initialFirstResponder = field
+        UITheme.styleAlert(alert)
         alert.beginSheetModal(for: window) { [weak self] response in
             guard let self else { return }
             if response == .alertFirstButtonReturn {
@@ -762,6 +755,7 @@ final class SidebarViewController: NSViewController {
         field.frame = NSRect(x: 0, y: 0, width: 240, height: 24)
         alert.accessoryView = field
         alert.window.initialFirstResponder = field
+        UITheme.styleAlert(alert)
         alert.beginSheetModal(for: window) { [weak self] response in
             guard let self else { return }
             self.exitTreeVisual()
@@ -990,9 +984,9 @@ extension SidebarViewController: NSOutlineViewDelegate {
         case .view(let ref):
             // Same folder size as the tree's SidebarFolderCellView rows.
             return SidebarCellView.make(
-                in: outlineView, title: ref.name, symbol: nil, isFolder: false,
-                image: AppIcons.folder(size: 17), prominent: false,
-                tint: UITheme.modeNormalText
+                in: outlineView, title: ref.name, symbol: nil, isFolder: true,
+                image: AppIcons.folder(size: 17), prominent: true,
+                tint: UITheme.accent
             )
         }
     }
@@ -1039,6 +1033,7 @@ extension SidebarViewController: NSOutlineViewDelegate {
     func setVimStatus(_ text: String) {
         modeLabel.stringValue = text
         modeLabel.textColor = vimStatusColor(for: text)
+        modeLabel.toolTip = text
     }
 
     private func vimStatusColor(for text: String) -> NSColor {

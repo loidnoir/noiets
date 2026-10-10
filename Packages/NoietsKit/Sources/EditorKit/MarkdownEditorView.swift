@@ -18,6 +18,38 @@ public final class MarkdownEditorView: NSView {
     public var onVimModeChange: ((VimMode) -> Void)?
     public var onVimStatus: ((String) -> Void)?
 
+    /// Makes only the editor's backing surfaces transparent; text/overlays
+    /// retain full opacity. The app supplies the blurred backdrop behind it.
+    public var isBackgroundTransparent = false {
+        didSet {
+            if isBackgroundTransparent != oldValue { applyEditorBackground() }
+        }
+    }
+
+    private func applyEditorBackground() {
+        scrollView.drawsBackground = !isBackgroundTransparent
+        textView.drawsBackground = !isBackgroundTransparent
+        scrollView.backgroundColor = isBackgroundTransparent ? .clear : theme.background
+        textView.backgroundColor = isBackgroundTransparent ? .clear : theme.background
+        scrollView.needsDisplay = true
+        textView.needsDisplay = true
+    }
+
+    /// Repaint session-only palette changes without loading the note again:
+    /// text, undo history, selection, Vim mode, and viewport stay intact.
+    public func refreshThemeColors() {
+        clearQuoteBarFades()
+        clearCaretSmears()
+        applyEditorBackground()
+        blockCaret.color = theme.accentColor.withAlphaComponent(0.38)
+        if let storage = textView.textStorage { highlighter.restyleAll(storage) }
+        if let manager = textView.textLayoutManager { manager.invalidateLayout(for: manager.documentRange) }
+        textView.needsDisplay = true
+        lineNumberGutter?.needsDisplay = true
+        refreshCaretShape()
+        refreshMermaidOverlays()
+    }
+
     /// Root for resolving relative image paths (the vault folder).
     public var resourceRoot: URL? {
         didSet { layoutController?.imageProvider.rootURL = resourceRoot }
@@ -31,6 +63,68 @@ public final class MarkdownEditorView: NSView {
     /// Block caret drawn in normal/visual mode (insert uses the native
     /// blinking bar).
     private let blockCaret = CaretBlockView()
+
+    /// Only the bar is snapshotted during edit entry — never the quote text.
+    private var quoteBarFades: [CAShapeLayer] = []
+    private var isLoadingNote = false
+
+    private func clearQuoteBarFades() {
+        quoteBarFades.forEach { $0.removeFromSuperlayer() }
+        quoteBarFades.removeAll()
+    }
+
+    private func fadeQuoteBarsEnteringEdit(in range: NSRange) {
+        clearQuoteBarFades()
+        guard !isLoadingNote, textView.window != nil,
+              highlighter.livePreviewEnabled, !highlighter.alwaysPreview,
+              !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+              let layoutManager = textView.textLayoutManager,
+              let contentStorage = textView.textContentStorage,
+              let location = contentStorage.location(contentStorage.documentRange.location, offsetBy: range.location)
+        else { return }
+
+        // Capture the old rendered geometry before restyling reveals `>`.
+        let origin = textView.textContainerOrigin
+        var bars: [CGRect] = []
+        layoutManager.enumerateTextLayoutFragments(from: location, options: [.ensuresLayout]) { fragment in
+            let index = contentStorage.offset(from: contentStorage.documentRange.location,
+                                               to: fragment.rangeInElement.location)
+            guard index < range.location + range.length else { return false }
+            if let quote = fragment as? QuoteBarFragment {
+                let frame = quote.layoutFragmentFrame
+                let rect = quote.barRect.offsetBy(dx: origin.x + frame.minX, dy: origin.y + frame.minY)
+                if rect.intersects(self.textView.visibleRect) { bars.append(rect) }
+            }
+            return true
+        }
+        guard !bars.isEmpty else { return }
+        textView.wantsLayer = true
+        guard let host = textView.layer else { return }
+        var color = theme.mutedColor.withAlphaComponent(0.5).cgColor
+        textView.effectiveAppearance.performAsCurrentDrawingAppearance {
+            color = theme.mutedColor.withAlphaComponent(0.5).cgColor
+        }
+        for rect in bars {
+            let bar = CAShapeLayer()
+            bar.name = "quoteBarFade"
+            bar.path = CGPath(roundedRect: rect, cornerWidth: 1.5, cornerHeight: 1.5, transform: nil)
+            bar.fillColor = color
+            bar.opacity = 0
+            host.addSublayer(bar)
+            quoteBarFades.append(bar)
+            let fade = CABasicAnimation(keyPath: "opacity")
+            fade.fromValue = 1
+            fade.toValue = 0
+            fade.duration = 0.12
+            fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            bar.add(fade, forKey: "quoteBarFade")
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 180_000_000)
+                bar.removeFromSuperlayer()
+                self?.quoteBarFades.removeAll { $0 === bar }
+            }
+        }
+    }
 
     /// Transient : mode gutter.
     private var lineNumberGutter: LineNumberGutter?
@@ -169,6 +263,9 @@ public final class MarkdownEditorView: NSView {
         textView.onFocusChange = { [weak self] in
             self?.refreshCaretShape()
         }
+        textView.onVisualMoveCompleted = { [weak self] in
+            self?.refreshCaretShape()
+        }
         vim.onCommandMode = { [weak self] active in
             self?.setLineNumbersVisible(active)
         }
@@ -217,7 +314,7 @@ public final class MarkdownEditorView: NSView {
             return
         }
         setNativeCaretVisible(false)
-        placeBlockCaret()
+        placeBlockCaret(animate: true)
         blockCaret.alphaValue = 1 // solid immediately after any movement…
 
         if vim.mode == .normal {
@@ -235,9 +332,17 @@ public final class MarkdownEditorView: NSView {
         }
     }
 
-    /// Positions the block over the current display caret (no blink changes).
-    private func placeBlockCaret() {
-        guard vim.mode != .insert else { return }
+    private var isRestylingSelection = false
+    private var isPlacingCaret = false
+
+    /// Preserve the last displayed cell through restyling and provisional
+    /// vertical selections. Geometry-only placements never emit a new trail.
+    private func placeBlockCaret(animate: Bool = false) {
+        guard vim.mode != .insert, !isLoadingNote, !isRestylingSelection, !isPlacingCaret,
+              !textView.inVerticalMove,
+              textView.window?.firstResponder === textView else { return }
+        isPlacingCaret = true
+        defer { isPlacingCaret = false }
         // The overlay can be dropped by view churn — re-assert attachment.
         if blockCaret.superview !== textView {
             textView.addSubview(blockCaret)
@@ -250,7 +355,7 @@ public final class MarkdownEditorView: NSView {
         }
         // Trail only on real cursor motion — the caret offset changing — not
         // on relayout re-placements (geometry shifts, block restyles).
-        if caret != smearCaretLocation, !blockCaret.isHidden {
+        if animate, caret != smearCaretLocation, !blockCaret.isHidden {
             spawnCaretSmear(from: blockCaret.frame, to: rect)
         }
         smearCaretLocation = caret
@@ -265,6 +370,12 @@ public final class MarkdownEditorView: NSView {
 
     private var smearCaretLocation = -1
 
+    private func clearCaretSmears() {
+        for layer in textView.layer?.sublayers ?? [] where layer.name == "caretSmear" {
+            layer.removeFromSuperlayer()
+        }
+    }
+
     private func spawnCaretSmear(from old: NSRect, to new: NSRect) {
         guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
         let dx = new.midX - old.midX
@@ -275,6 +386,7 @@ public final class MarkdownEditorView: NSView {
 
         let (start, end) = smearQuads(from: old, to: new, dx: dx, dy: dy)
         let smear = CAShapeLayer()
+        smear.name = "caretSmear"
         smear.fillColor = blockCaret.color.cgColor
         smear.path = end
         smear.opacity = 0
@@ -447,6 +559,10 @@ public final class MarkdownEditorView: NSView {
             refreshCaretShape() // first placement needs screen-coordinate space
         } else {
             stopBlink()
+            blockCaret.isHidden = true
+            smearCaretLocation = -1
+            clearCaretSmears()
+            clearQuoteBarFades()
         }
     }
 
@@ -455,6 +571,13 @@ public final class MarkdownEditorView: NSView {
         guard let window = textView.window else { return nil }
         let length = (textView.string as NSString).length
         let clamped = min(max(location, 0), length)
+        // Preview/source changes invalidate wrapped-row geometry. Settle the
+        // departing paragraph too: its estimated height otherwise shifts the
+        // destination up toward the logical quote's first row.
+        if smearCaretLocation >= 0 {
+            textView.ensureLocalLayout(around: min(smearCaretLocation, length))
+        }
+        textView.ensureLocalLayout(around: clamped)
         let range = NSRange(location: clamped, length: clamped < length ? 1 : 0)
         var screenRect = textView.firstRect(forCharacterRange: range, actualRange: nil)
         if screenRect == .zero { return nil }
@@ -547,6 +670,7 @@ public final class MarkdownEditorView: NSView {
         guard highlighter.alwaysPreview != locked || textView.isReadOnlyDocument != locked else {
             return
         }
+        clearQuoteBarFades()
         textView.isReadOnlyDocument = locked
         highlighter.alwaysPreview = locked
         if let storage = textView.textStorage {
@@ -572,6 +696,13 @@ public final class MarkdownEditorView: NSView {
     }
 
     public func load(text: String) {
+        isLoadingNote = true
+        defer { isLoadingNote = false }
+        clearQuoteBarFades()
+        clearCaretSmears()
+        textView.cancelSmoothScrolling()
+        blockCaret.isHidden = true
+        smearCaretLocation = -1
         autocomplete.hide()
         vim.reset()
         mermaidOverlays.forEach { $0.removeFromSuperview() }
@@ -827,17 +958,31 @@ extension MarkdownEditorView: NSTextViewDelegate {
         let text = textView.string as NSString
         let selection = textView.selectedRange()
         guard selection.location != NSNotFound else { return }
-        // Any natively made selection (mouse drag, shift-arrows) enters
-        // visual mode; collapsing it by click leaves visual.
-        let endpoints = textView.vimSelectionEndpoints
-        vim.syncNativeSelection(selection, anchor: endpoints?.anchor, head: endpoints?.head)
-        let paragraph = text.length == 0
-            ? NSRange(location: 0, length: 0)
-            : text.paragraphRange(for: NSRange(
-                location: min(selection.location, text.length),
-                length: min(selection.length, max(0, text.length - selection.location))
-              ))
-        highlighter.updateActiveParagraph(storage, to: paragraph)
+        do {
+            // Restyling can synchronously resize the text view. Those geometry
+            // callbacks must not replace the old visual caret or start a trail.
+            let wasRestyling = isRestylingSelection
+            isRestylingSelection = true
+            defer { isRestylingSelection = wasRestyling }
+            // Any natively made selection (mouse drag, shift-arrows) enters
+            // visual mode; collapsing it by click leaves visual.
+            let endpoints = textView.vimSelectionEndpoints
+            vim.syncNativeSelection(selection, anchor: endpoints?.anchor, head: endpoints?.head)
+            let paragraph = text.length == 0
+                ? NSRange(location: 0, length: 0)
+                : text.paragraphRange(for: NSRange(
+                    location: min(selection.location, text.length),
+                    length: min(selection.length, max(0, text.length - selection.location))
+                  ))
+            let previous = highlighter.activeParagraphRange
+            if paragraph != previous {
+                fadeQuoteBarsEnteringEdit(in: paragraph)
+            }
+            highlighter.updateActiveParagraph(storage, to: paragraph)
+            if paragraph != previous, let layoutManager = self.textView.textLayoutManager {
+                layoutController?.invalidateQuoteNeighbors(around: [previous, paragraph], in: layoutManager)
+            }
+        }
         refreshCaretShape()
         // Entering/leaving a mermaid block flips it between canvas and source.
         refreshMermaidOverlays()

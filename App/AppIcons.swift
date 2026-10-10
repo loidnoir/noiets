@@ -6,6 +6,8 @@ import AppKit
 enum AppIcons {
     private static var cache: [String: NSImage] = [:]
 
+    static func invalidateThemeCache() { cache.removeAll() }
+
     static func folder(size: CGFloat) -> NSImage? { named("Folder", size: size) }
     static func document(size: CGFloat) -> NSImage? { named("Document", size: size) }
     static func trash(size: CGFloat) -> NSImage? { named("Trash", size: size) }

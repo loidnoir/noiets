@@ -1,4 +1,5 @@
 import AppKit
+import RenderKit
 
 extension NSTextLayoutFragment {
     /// Width of the centered writing column (the text container tracks it).
@@ -7,7 +8,8 @@ extension NSTextLayoutFragment {
     }
 }
 
-/// Column-wide background band behind code lines; glyphs draw as usual.
+/// Code glyphs with a column-wide band drawn in the text view's background
+/// pass, below native selection. Glyphs and error badges draw as usual.
 /// The block's first/last lines round their outer corners (the band color is
 /// opaque, so extending a rounded band into the neighbor line hides the
 /// unrounded edge seamlessly).
@@ -48,7 +50,9 @@ final class CodeBandFragment: NSTextLayoutFragment {
                       height: layoutFragmentFrame.height - topGap)
     }
 
-    override func draw(at point: CGPoint, in context: CGContext) {
+    /// Drawn by the text view's background pass, below native selection.
+    /// Fragment drawing happens above selection and must only draw glyphs.
+    func drawBand(at point: CGPoint, in context: CGContext) {
         context.saveGState()
         context.setFillColor(theme.codeBackground.cgColor)
         var rect = bandRect.offsetBy(dx: point.x, dy: point.y)
@@ -65,13 +69,16 @@ final class CodeBandFragment: NSTextLayoutFragment {
             context.fillPath()
         }
         context.restoreGState()
+    }
+
+    override func draw(at point: CGPoint, in context: CGContext) {
         super.draw(at: point, in: context)
 
         if let badge {
             NSGraphicsContext.saveGraphicsState()
             NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
             let attrs: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: theme.baseFontSize - 3),
+                .font: AppFonts.font(ofSize: theme.baseFontSize - 3),
                 .foregroundColor: NSColor.systemRed.withAlphaComponent(0.85),
             ]
             let text = badge as NSString
@@ -180,8 +187,8 @@ final class TableRowFragment: NSTextLayoutFragment {
         NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
 
         let font = isHeader
-            ? NSFont.systemFont(ofSize: theme.baseFontSize - 1, weight: .semibold)
-            : NSFont.systemFont(ofSize: theme.baseFontSize - 1)
+            ? AppFonts.font(ofSize: theme.baseFontSize - 1, weight: .semibold)
+            : AppFonts.font(ofSize: theme.baseFontSize - 1)
         let attrs: [NSAttributedString.Key: Any] = [
             .font: font,
             .foregroundColor: isHeader ? theme.textColor : theme.textColor.withAlphaComponent(0.92),
@@ -211,8 +218,8 @@ final class TableRowFragment: NSTextLayoutFragment {
 /// lines within a single paragraph.
 final class QuoteBarFragment: OverlayLineFragment {
     private let theme: EditorTheme
-    private let joinsPrevious: Bool
-    private let joinsNext: Bool
+    let joinsPrevious: Bool
+    let joinsNext: Bool
 
     init(textElement: NSTextElement, range: NSTextRange?, theme: EditorTheme,
          spans: [OverlayLineFragment.Span], joinsPrevious: Bool, joinsNext: Bool) {
@@ -235,15 +242,15 @@ final class QuoteBarFragment: OverlayLineFragment {
         )
     }
 
-    override func draw(at point: CGPoint, in context: CGContext) {
-        context.saveGState()
+    /// Fragment-local geometry shared with the short edit-entry fade overlay.
+    var barRect: CGRect {
         // The fragment origin follows the paragraph indent, so anchor the bar
         // to the bullet-dot column; span exactly the text's visual extent
         // (caps to descenders) off the real rendered baseline, so bar and
         // text are centered on each other by construction.
-        let font = NSFont.systemFont(ofSize: theme.baseFontSize)
+        let font = AppFonts.displayFont(ofSize: theme.baseFontSize)
         let dashHalf = ("-" as NSString)
-            .size(withAttributes: [.font: NSFont.systemFont(ofSize: theme.baseFontSize,
+            .size(withAttributes: [.font: AppFonts.font(ofSize: theme.baseFontSize,
                                                             weight: .bold)]).width / 2
         let padding = textLayoutManager?.textContainer?.lineFragmentPadding ?? 5
         // Wrapped quotes span several visual lines — run the bar from the
@@ -273,8 +280,13 @@ final class QuoteBarFragment: OverlayLineFragment {
         let bottom = joinsNext
             ? layoutFragmentFrame.height + overlap
             : lastBaseline - font.descender + 1.5 // descender is negative
-        let bar = CGRect(x: point.x - layoutFragmentFrame.minX + padding + dashHalf - 1.5,
-                         y: point.y + top, width: 3, height: bottom - top)
+        return CGRect(x: -layoutFragmentFrame.minX + padding + dashHalf - 1.5,
+                      y: top, width: 3, height: bottom - top)
+    }
+
+    override func draw(at point: CGPoint, in context: CGContext) {
+        context.saveGState()
+        let bar = barRect.offsetBy(dx: point.x, dy: point.y)
         context.addPath(CGPath(roundedRect: bar, cornerWidth: 1.5, cornerHeight: 1.5,
                                transform: nil))
         context.setFillColor(theme.mutedColor.withAlphaComponent(0.5).cgColor)

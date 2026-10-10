@@ -4,6 +4,8 @@ A local-first, native macOS markdown notes app — Obsidian's engine with Things
 Pure AppKit + TextKit 2, no web views, no Electron.
 
 - Plain `.md` files in a vault folder you own. Disk is the source of truth; the app just watches it.
+- **Resume**: reopening the app restores the last-open note for each vault. In-app moves/renames
+  keep it remembered; unavailable notes fall back to the first note. Stored locally in app preferences.
 - **Live Preview**: markup hides on inactive lines and the caret's line reverts to raw source —
   exactly the Obsidian editing model, built natively on TextKit 2 custom layout fragments.
 - **Vim** in the editor: Normal/Insert/Visual, counts, operators (`d c y`), text objects
@@ -76,7 +78,23 @@ make test    # package unit tests (103 tests: markdown, vim, index, export)
 Code layout: `App/` (AppKit shell) and `Packages/NoietsKit/` with strict downward deps —
 `SharedModel` ← `VaultStore`/`MarkdownKit`/`VimKit`(headless) ← `RenderKit`/`IndexKit` ← `EditorKit`.
 
+## Glass content background
+
+Open the command search with **⌘P**, then search **glass**, **blur**, or **transparency** and choose **Toggle transparency**. It toggles one blurred, translucent backdrop across the entire right-hand content pane: notes, Search, saved Views, Trash, and images. Text and the sidebar retain full opacity. It starts opaque on each launch, with Ghostty-style **90% background opacity / blur radius 20** when enabled. Native fullscreen and macOS **Reduce Transparency** restore the opaque editor.
+
 ## Dev harness
+
+For live, session-only theme experiments, quit the running app first:
+
+```bash
+make run ARGS=--debug-theme
+```
+
+The floating Theme Colors panel offers color wells and hex fields (`#RRGGBB` / `#RRGGBBAA`), plus **Background opacity** and **Blur radius** (0–100) sliders. Moving either slider enables transparency for live preview; radius 0 removes blur, while 100% opacity makes the content pane opaque. The panel reports the active backend.
+
+Blur uses the same private WindowServer `CGSSetWindowBackgroundBlurRadius` path as Ghostty, without AppKit material tint on that path. Symbols are dynamically resolved; missing/rejected API calls use an AppKit material fallback, which cannot honor the requested radius. The backdrop stays stable across page changes; blur is cleared on disable, fullscreen, and window close. **This private API is not App Store-safe and may change across macOS releases.** Reduce Transparency disables the sliders and keeps the content pane opaque.
+
+Colors affect the current light/dark appearance without forcing an appearance. **Reset All** restores colors and backdrop defaults; **Copy Palette** includes both color palettes and the `editorBackdrop` values as JSON, ready to share. Reopen the panel via **Window → Theme Colors…**. Nothing is written to preferences or note files; a normal launch uses the original theme.
 
 Environment hooks used by the automated verify loop (all inert in normal runs):
 

@@ -1,5 +1,6 @@
 import AppKit
 import EditorKit
+import RenderKit
 
 /// The shared overlay for ⌘O quick-open and ⌘P command palette: a flat,
 /// borderless panel with a query field and a keyboard-driven result list.
@@ -31,6 +32,11 @@ final class PalettePanel: NSPanel {
 
     static let shared = PalettePanel()
 
+    func refreshThemeColors() {
+        contentView?.layer?.borderColor = UITheme.hairline.cgColor
+        if let contentView { UITheme.repaintColors(in: contentView) }
+    }
+
     private init() {
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: 560, height: 380),
@@ -61,7 +67,7 @@ final class PalettePanel: NSPanel {
         field.isBordered = false
         field.isBezeled = false
         field.focusRingType = .none
-        field.font = .systemFont(ofSize: 17)
+        field.font = AppFonts.font(ofSize: 17)
         field.backgroundColor = .clear
         field.placeholderString = "Search…"
         field.delegate = self
@@ -243,9 +249,9 @@ private final class PaletteCellView: NSTableCellView {
             icon.widthAnchor.constraint(equalToConstant: 18),
             icon.heightAnchor.constraint(equalToConstant: 18),
         ])
-        title.font = .systemFont(ofSize: 15)
+        title.font = AppFonts.font(ofSize: 15)
         title.lineBreakMode = .byTruncatingTail
-        subtitle.font = .systemFont(ofSize: 13)
+        subtitle.font = AppFonts.font(ofSize: 13)
         subtitle.textColor = .tertiaryLabelColor
         subtitle.lineBreakMode = .byTruncatingHead
 

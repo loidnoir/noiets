@@ -115,18 +115,13 @@ private final class CenteringClipView: NSClipView {
     }
 }
 
-/// Focusable canvas behind the image; matches the editor background so the
-/// content pane reads as one surface.
+/// Focusable, transparent canvas; the content host supplies the same
+/// backdrop as notes, searches, saved views, and trash.
 private final class ImagePaneView: NSView {
     var onPaneLeft: (() -> Void)?
     var onEscape: (() -> Void)?
 
     override var acceptsFirstResponder: Bool { true }
-
-    override func draw(_ dirtyRect: NSRect) {
-        EditorTheme.standard().background.setFill()
-        dirtyRect.fill()
-    }
 
     override func keyDown(with event: NSEvent) {
         if event.keyCode == 53 { // esc → back to the document

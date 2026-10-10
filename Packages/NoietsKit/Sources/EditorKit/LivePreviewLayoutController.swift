@@ -44,15 +44,7 @@ public final class LivePreviewLayoutController: NSObject {
         guard lineIndex < scan.lines.count else { return .plain }
         let line = scan.lines[lineIndex]
 
-        let active = highlighter.map { h in
-            !h.alwaysPreview && (
-                NSIntersectionRange(line.range, h.activeParagraphRange).length > 0
-                    || (h.activeParagraphRange.length == 0
-                        && h.activeParagraphRange.location >= line.range.location
-                        && h.activeParagraphRange.location <= line.range.location + line.range.length)
-                    || !h.livePreviewEnabled
-            )
-        } ?? true
+        let active = isActive(line.range)
 
         switch line.kind {
         case .code, .fenceDelimiter:
@@ -92,8 +84,8 @@ public final class LivePreviewLayoutController: NSObject {
             return .code(roundTop: lineIndex == 0 || !isCode(lineIndex - 1),
                          roundBottom: lineIndex == scan.lines.count - 1 || !isCode(lineIndex + 1),
                          badge: badge)
-        case .blockquote:
-            let spans = active ? [] : inlineOverlaySpans(
+        case .blockquote where !active:
+            let spans = inlineOverlaySpans(
                 tokens: MarkdownScan.lineTokens(text, line: line),
                 text: text,
                 base: line.range.location,
@@ -101,7 +93,9 @@ public final class LivePreviewLayoutController: NSObject {
             )
             func isQuote(_ index: Int) -> Bool {
                 guard scan.lines.indices.contains(index) else { return false }
-                if case .blockquote = scan.lines[index].kind { return true }
+                if case .blockquote = scan.lines[index].kind {
+                    return !isActive(scan.lines[index].range)
+                }
                 return false
             }
             return .quote(
@@ -198,6 +192,35 @@ public final class LivePreviewLayoutController: NSObject {
             return .plain
         default:
             return .plain
+        }
+    }
+
+    private func isActive(_ range: NSRange) -> Bool {
+        highlighter.map { h in
+            !h.alwaysPreview && (
+                !h.livePreviewEnabled
+                    || NSIntersectionRange(range, h.activeParagraphRange).length > 0
+                    || (h.activeParagraphRange.length == 0
+                        && h.activeParagraphRange.location >= range.location
+                        && h.activeParagraphRange.location <= range.location + range.length)
+            )
+        } ?? true
+    }
+
+    /// Quote bars connect only to other rendered quotes. Restyling the caret's
+    /// paragraph also needs to refresh its neighbors' cap/join geometry.
+    func invalidateQuoteNeighbors(around ranges: [NSRange], in layoutManager: NSTextLayoutManager) {
+        guard let scan = highlighter?.currentScan, !scan.lines.isEmpty, let contentStorage else { return }
+        for range in ranges {
+            let span = scan.lineIndices(intersecting: range)
+            for index in max(0, span.lowerBound - 1)...min(scan.lines.count - 1, span.upperBound + 1) {
+                let line = scan.lines[index]
+                guard case .blockquote = line.kind,
+                      let start = contentStorage.location(contentStorage.documentRange.location, offsetBy: line.range.location),
+                      let end = contentStorage.location(start, offsetBy: line.range.length),
+                      let textRange = NSTextRange(location: start, end: end) else { continue }
+                layoutManager.invalidateLayout(for: textRange)
+            }
         }
     }
 

@@ -1,69 +1,70 @@
 import AppKit
+import RenderKit
 
 /// App-chrome colors (sidebar, dividers). Editor colors live in EditorKit's
 /// EditorTheme. Everything is flat and opaque — no vibrancy, no materials.
 @MainActor
 enum UITheme {
-    // Swapped palette: the sidebar is the darker plane, content the lighter.
-    static let sidebarBackground = dynamic(
-        light: .white,
-        dark: NSColor(white: 0.115, alpha: 1)
-    )
-    static let sidebarSelection = dynamic(
-        light: NSColor(white: 0.9, alpha: 1),
-        dark: NSColor(white: 0.24, alpha: 1)
-    )
-    /// Selection pill while its list owns the keyboard — the pane-focus
-    /// indicator (quiet accent tint, not the system blue).
-    static let sidebarSelectionFocused = dynamic(
-        light: NSColor(red: 0.13, green: 0.42, blue: 0.95, alpha: 0.22),
-        dark: NSColor(red: 0.35, green: 0.58, blue: 1.0, alpha: 0.28)
-    )
-    static let modeNormalText = dynamic(
-        light: rgb(0x5672E3),
-        dark: rgb(0x5672E3)
-    )
-    static let modeInsertText = dynamic(
-        light: rgb(0xCF503A),
-        dark: rgb(0xCF503A)
-    )
-    static let modeVisualText = dynamic(
-        light: rgb(0x8D53D4),
-        dark: rgb(0x8D53D4)
-    )
-    /// Primary information color used for informational actions.
-    static let informationColor = modeNormalText
-    /// Hairline separating panes and the bottom mode bar — a touch darker
-    /// than the sidebar background in both appearances.
-    static let paneSeparator = dynamic(
-        light: NSColor(white: 0.87, alpha: 1),
-        dark: NSColor(white: 0.075, alpha: 1)
-    )
-    static let sidebarPrimaryText = dynamic(
-        light: NSColor(white: 0.22, alpha: 1),
-        dark: NSColor(white: 0.85, alpha: 1)
-    )
-    static let sidebarSecondaryText = dynamic(
-        light: NSColor(white: 0.45, alpha: 1),
-        dark: NSColor(white: 0.60, alpha: 1)
-    )
-    static let hairline = dynamic(
-        light: NSColor(white: 0.86, alpha: 1),
-        dark: NSColor(white: 0.26, alpha: 1)
-    )
+    static let sidebarBackground = AppColors.color(.sidebarBackground)
+    static let sidebarSelection = AppColors.color(.sidebarSelection)
+    static let sidebarSelectionFocused = AppColors.color(.sidebarFocusedSelection)
+    static let modeNormalText = AppColors.color(.sidebarSecondaryText)
+    static let modeInsertText = AppColors.color(.modeInsert)
+    static let modeVisualText = AppColors.color(.modeVisual)
+    // Accent is independent of the quiet NORMAL/TREE/LIST status color.
+    static let accent = AppColors.primary
+    static let informationColor = accent
+    static let paneSeparator = AppColors.color(.paneSeparator)
+    static let sidebarPrimaryText = AppColors.color(.sidebarText)
+    static let sidebarSecondaryText = AppColors.color(.sidebarSecondaryText)
+    static let hairline = AppColors.color(.hairline)
 
-    private static func rgb(_ value: Int) -> NSColor {
-        NSColor(
-            red: CGFloat((value >> 16) & 0xff) / 255,
-            green: CGFloat((value >> 8) & 0xff) / 255,
-            blue: CGFloat(value & 0xff) / 255,
-            alpha: 1
-        )
+    /// Refresh cached cells/layers, without reloading controllers or changing
+    /// note contents, selections, query text, or scroll positions.
+    static func repaintColors(in view: NSView, excluding excludedView: NSView? = nil) {
+        guard view !== excludedView else { return }
+        view.needsDisplay = true
+        if let field = view as? NSTextField {
+            field.textColor = field.textColor
+            if field.currentEditor() == nil {
+                field.attributedStringValue = NSAttributedString(attributedString: field.attributedStringValue)
+            }
+        }
+        if let image = view as? NSImageView { image.contentTintColor = image.contentTintColor }
+        if let button = view as? NSButton { button.contentTintColor = button.contentTintColor }
+        if let text = view as? NSTextView, let storage = text.textStorage, storage.length > 0 {
+            // Invalidate shaped text colors (e.g. the search query editor).
+            var runs: [(NSRange, [NSAttributedString.Key: Any])] = []
+            storage.enumerateAttributes(in: NSRange(location: 0, length: storage.length)) { attributes, range, _ in
+                runs.append((range, attributes))
+            }
+            storage.beginEditing()
+            for (range, attributes) in runs { storage.setAttributes(attributes, range: range) }
+            storage.endEditing()
+        }
+        for child in view.subviews { repaintColors(in: child, excluding: excludedView) }
     }
 
-    private static func dynamic(light: NSColor, dark: NSColor) -> NSColor {
-        NSColor(name: nil) { appearance in
-            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light
+    static func styleMenu(_ menu: NSMenu) {
+        menu.font = AppFonts.font(ofSize: NSFont.systemFontSize)
+        for item in menu.items {
+            if let submenu = item.submenu { styleMenu(submenu) }
         }
     }
+
+    static func styleAlert(_ alert: NSAlert) {
+        alert.layout()
+        if let content = alert.window.contentView { styleControls(in: content) }
+    }
+
+    private static func styleControls(in view: NSView) {
+        if let control = view as? NSControl, let font = control.font {
+            let traits = font.fontDescriptor.symbolicTraits
+            control.font = AppFonts.font(ofSize: font.pointSize,
+                                         weight: traits.contains(.bold) ? .bold : .regular,
+                                         italic: traits.contains(.italic))
+        }
+        for subview in view.subviews { styleControls(in: subview) }
+    }
+
 }

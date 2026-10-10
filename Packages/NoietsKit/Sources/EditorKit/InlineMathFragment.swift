@@ -111,7 +111,7 @@ class OverlayLineFragment: NSTextLayoutFragment {
             let bounds = line.typographicBounds
             // Markers center on the x-height midline (where a strikethrough
             // sits), anchored to the real rendered baseline.
-            let font = NSFont.systemFont(ofSize: theme.baseFontSize)
+            let font = AppFonts.font(ofSize: theme.baseFontSize)
             let baseline = bounds.origin.y + line.glyphOrigin.y
             let textMidline = baseline - font.xHeight / 2
 
@@ -132,7 +132,7 @@ class OverlayLineFragment: NSTextLayoutFragment {
                 // Same disc as a done checkbox, accent-colored, centered
                 // where the "-" glyph sat.
                 let dashWidth = ("-" as NSString)
-                    .size(withAttributes: [.font: NSFont.systemFont(ofSize: theme.baseFontSize,
+                    .size(withAttributes: [.font: AppFonts.font(ofSize: theme.baseFontSize,
                                                                     weight: .bold)]).width
                 let radius: CGFloat = theme.baseFontSize * 0.2015
                 let center = CGPoint(
@@ -146,7 +146,7 @@ class OverlayLineFragment: NSTextLayoutFragment {
                 // Centered exactly where a bullet dot sits, so the marker
                 // column and text starts line up across list styles.
                 let dashWidth = ("-" as NSString)
-                    .size(withAttributes: [.font: NSFont.systemFont(ofSize: theme.baseFontSize,
+                    .size(withAttributes: [.font: AppFonts.font(ofSize: theme.baseFontSize,
                                                                     weight: .bold)]).width
                 let radius: CGFloat = theme.baseFontSize * 0.2015
                 let center = CGPoint(
