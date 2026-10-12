@@ -3,9 +3,8 @@ import MarkdownKit
 import RenderKit
 import WebKit
 
-/// Renders the HTML export in an offscreen web view and prints it to a
-/// paginated PDF, so the PDF carries the exact same styling as the HTML
-/// export. The exporter keeps itself alive until the print job finishes.
+/// Prints the editor-styled, self-contained HTML document to a paginated PDF.
+/// The exporter keeps itself alive until assets decode and printing finishes.
 @MainActor
 final class PDFExport: NSObject, WKNavigationDelegate {
     private static var active: [PDFExport] = []
@@ -43,26 +42,27 @@ final class PDFExport: NSObject, WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFinish _: WKNavigation!) {
-        // Mermaid renders async after load — poll briefly (≤3s) until every
-        // diagram div holds its svg, then print. Documents without diagrams
-        // pass the check immediately.
-        waitForMermaid(attempts: 15)
+        // Embedded images and fonts can finish decoding after navigation.
+        // Wait for them and Mermaid before laying out the printed pages.
+        waitForAssets(attempts: 50)
     }
 
-    private func waitForMermaid(attempts: Int) {
+    private func waitForAssets(attempts: Int) {
         webView.evaluateJavaScript(
-            "Array.from(document.querySelectorAll('.mermaid')).every(el => el.querySelector('svg'))"
+            "document.fonts.status === 'loaded' && Array.from(document.images).every(img => img.complete && img.naturalWidth > 0) && Array.from(document.querySelectorAll('.mermaid')).every(el => el.querySelector('svg'))"
         ) { [weak self] value, _ in
             Task { @MainActor [weak self] in
-                if (value as? Bool) != false || attempts <= 0 {
+                if (value as? Bool) == true {
                     // One more beat for WebKit to finish layout before paginating.
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                         self?.runPrintOperation()
                     }
-                } else {
+                } else if attempts > 0 {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                        self?.waitForMermaid(attempts: attempts - 1)
+                        self?.waitForAssets(attempts: attempts - 1)
                     }
+                } else {
+                    self?.finish(success: false)
                 }
             }
         }

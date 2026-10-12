@@ -5,7 +5,11 @@ import SharedModel
 /// uses — so what you see is what exports. Math is left as TeX source in
 /// `.math` spans; code blocks keep their language as a class.
 public enum HTMLExport {
-    public static func html(from markdown: String, title: String) -> String {
+    /// Optional resource mapping makes print exports self-contained. A missing
+    /// mapped image gets a visible placeholder rather than being dropped.
+    public static func html(from markdown: String, title: String,
+                            additionalCSS: String = "", preserveBlankLines: Bool = false,
+                            imageSource: ((String) -> ImageSource?)? = nil) -> String {
         let ns = markdown as NSString
         let scan = BlockScan.scan(ns)
         var body: [String] = []
@@ -16,6 +20,7 @@ public enum HTMLExport {
         var container = Container.none
         var hasMermaid = false
         var quoteParagraphOpen = false
+        func inline(_ range: NSRange) -> String { inlineHTML(ns, range: range, imageSource: imageSource) }
 
         func close() {
             switch container {
@@ -59,11 +64,12 @@ public enum HTMLExport {
             switch line.kind {
             case .blank:
                 close()
+                if preserveBlankLines { body.append("<div class=\"blank-line\" aria-hidden=\"true\"></div>") }
             case .frontmatterDelimiter, .frontmatterContent:
                 continue
             case .heading(let level, _, let textRange):
                 close()
-                body.append("<h\(level)>\(inlineHTML(ns, range: textRange))</h\(level)>")
+                body.append("<h\(level)>\(inline(textRange))</h\(level)>")
             case .horizontalRule:
                 close()
                 body.append("<hr>")
@@ -89,11 +95,11 @@ public enum HTMLExport {
                 ensure(ordered ? .ol : .ul)
                 let end = line.contentRange.location + line.contentRange.length
                 let content = contentStart < end
-                    ? inlineHTML(ns, range: NSRange(location: contentStart, length: end - contentStart))
+                    ? inline(NSRange(location: contentStart, length: end - contentStart))
                     : ""
                 if let task {
                     let checked = task.checked ? " checked" : ""
-                    body.append("<li><input type=\"checkbox\" disabled\(checked)> \(content)</li>")
+                    body.append("<li class=\"task\(task.checked ? " completed" : "")\"><input type=\"checkbox\" disabled\(checked)> \(content)</li>")
                 } else {
                     body.append("<li>\(content)</li>")
                 }
@@ -104,10 +110,11 @@ public enum HTMLExport {
                 if ns.substring(with: range).trimmingCharacters(in: .whitespaces).isEmpty {
                     if quoteParagraphOpen { body.append("</p>") }
                     quoteParagraphOpen = false
+                    if preserveBlankLines { body.append("<div class=\"blank-line\" aria-hidden=\"true\"></div>") }
                 } else {
                     if !quoteParagraphOpen { body.append("<p>") }
                     quoteParagraphOpen = true
-                    body.append(inlineHTML(ns, range: range))
+                    body.append(inline(range))
                 }
             case .tableRow:
                 let isHeader = index + 1 < scan.lines.count && {
@@ -121,7 +128,7 @@ public enum HTMLExport {
                     .drop(while: \.isEmpty)
                     .reversed().drop(while: \.isEmpty).reversed()
                 let tag = isHeader ? "th" : "td"
-                let row = cells.map { "<\(tag)>\(escapeInlineCell(String($0)))</\(tag)>" }.joined()
+                let row = cells.map { "<\(tag)>\(escapeInlineCell(String($0), imageSource: imageSource))</\(tag)>" }.joined()
                 body.append("<tr>\(row)</tr>")
             case .tableDelimiterRow, .mathDelimiter:
                 continue
@@ -132,7 +139,7 @@ public enum HTMLExport {
                 }
             case .paragraph:
                 close()
-                body.append("<p>\(inlineHTML(ns, range: line.contentRange))</p>")
+                body.append("<p>\(inline(line.contentRange))</p>")
             }
         }
         close()
@@ -176,6 +183,7 @@ public enum HTMLExport {
           body { margin: 0 auto; padding: 0; }
           pre { overflow-x: hidden; white-space: pre-wrap; }
         }
+        \(additionalCSS)
         </style>
         </head>
         <body>
@@ -202,8 +210,10 @@ public enum HTMLExport {
 
     // MARK: Inline rendering
 
-    private static func inlineHTML(_ text: NSString, range: NSRange) -> String {
+    private static func inlineHTML(_ text: NSString, range: NSRange,
+                                   imageSource: ((String) -> ImageSource?)? = nil) -> String {
         let tokens = InlineScanner.tokens(text, in: range)
+        let images = imageReferences(text, range: range)
         var events: [(location: Int, priority: Int, text: String)] = []
 
         func wrap(_ contentRange: NSRange, _ open: String, _ close: String) {
@@ -212,9 +222,26 @@ public enum HTMLExport {
         }
 
         var skip: [NSRange] = [] // marker/url runs excluded from text output
+        for image in images {
+            let asset: ImageSource?
+            if let imageSource { asset = imageSource(image.path) }
+            else { asset = ImageSource(url: image.path) }
+            let markup: String
+            if let asset {
+                var size = ""
+                if let width = asset.width, width.isFinite, width > 0 { size += " width=\"\(width)\"" }
+                if let height = asset.height, height.isFinite, height > 0 { size += " height=\"\(height)\"" }
+                markup = "<img src=\"\(escape(asset.url))\" alt=\"\(escape(image.alt))\"\(size)>"
+            } else {
+                markup = "<span class=\"missing-image\">Image unavailable: \(escape(image.path))</span>"
+            }
+            events.append((image.range.location, 2, markup))
+            skip.append(image.range)
+        }
         var index = 0
         for token in tokens {
             defer { index += 1 }
+            if images.contains(where: { NSIntersectionRange($0.range, token.range) == token.range }) { continue }
             switch token.kind {
             case .emphasisMarker, .inlineCodeMarker, .linkBracket, .wikiLinkMarker,
                  .tagMarker, .mathMarker:
@@ -259,7 +286,7 @@ public enum HTMLExport {
         events.sort { $0.location != $1.location ? $0.location < $1.location : $0.priority > $1.priority }
         var eventIndex = 0
         while i < end {
-            while eventIndex < events.count, events[eventIndex].location == i {
+            while eventIndex < events.count, events[eventIndex].location <= i {
                 out += events[eventIndex].text
                 eventIndex += 1
             }
@@ -267,8 +294,10 @@ public enum HTMLExport {
                 i = hidden.location + hidden.length
                 continue
             }
-            out += escape(text.substring(with: NSRange(location: i, length: 1)))
-            i += 1
+            let composed = text.rangeOfComposedCharacterSequence(at: i)
+            let visible = NSIntersectionRange(composed, NSRange(location: i, length: end - i))
+            out += escape(text.substring(with: visible))
+            i = NSMaxRange(visible)
         }
         while eventIndex < events.count, events[eventIndex].location <= end {
             out += events[eventIndex].text
@@ -277,8 +306,8 @@ public enum HTMLExport {
         return out
     }
 
-    private static func escapeInlineCell(_ s: String) -> String {
-        inlineHTML(s as NSString, range: NSRange(location: 0, length: (s as NSString).length))
+    private static func escapeInlineCell(_ s: String, imageSource: ((String) -> ImageSource?)?) -> String {
+        inlineHTML(s as NSString, range: NSRange(location: 0, length: (s as NSString).length), imageSource: imageSource)
     }
 
     private static func escape(_ s: String) -> String {

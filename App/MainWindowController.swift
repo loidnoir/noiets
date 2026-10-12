@@ -1,4 +1,5 @@
 import AppKit
+import EditorKit
 import IndexKit
 import MarkdownKit
 import RenderKit
@@ -502,15 +503,23 @@ final class MainWindowController: NSWindowController {
         session.flushPendingSave()
         let title = url.deletingPathExtension().lastPathComponent
         let markdown = editorVC.editor.string
-        let baseURL = url.deletingLastPathComponent()
+        let vaultRoot = session.vault.rootURL
 
         let panel = NSSavePanel()
         panel.nameFieldStringValue = "\(title).pdf"
         panel.allowedContentTypes = [.pdf]
         panel.beginSheetModal(for: window) { response in
             guard response == .OK, let dest = panel.url else { return }
-            let html = HTMLExport.html(from: markdown, title: title)
-            PDFExport.export(html: html, baseURL: baseURL, to: dest, for: window)
+            Task { @MainActor in
+                let html = await EditorPrintDocument.html(from: markdown, title: title, noteURL: url, vaultRoot: vaultRoot)
+                PDFExport.export(html: html, baseURL: nil, to: dest, for: window) { success in
+                    guard !success else { return }
+                    let alert = NSAlert()
+                    alert.messageText = "PDF export failed"
+                    alert.informativeText = "The document could not finish rendering or be saved. Please try again."
+                    alert.beginSheetModal(for: window)
+                }
+            }
         }
     }
 

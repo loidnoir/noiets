@@ -145,4 +145,13 @@ public enum AppFonts {
         }
         return rules.joined(separator: "\n")
     }()
+
+    /// Portable quote faces for print export, without changing Mermaid's CSS.
+    public static let quoteWebCSS: String = {
+        [("Regular", 400, "normal"), ("Italic", 400, "italic"),
+         ("Bold", 700, "normal"), ("BoldItalic", 700, "italic")].compactMap { face, weight, style in
+            guard let url = fontURL("Libron-\(face).ttf"), let data = try? Data(contentsOf: url) else { return nil }
+            return "@font-face { font-family: 'Noiets Libron'; font-weight: \(weight); font-style: \(style); src: url(data:font/ttf;base64,\(data.base64EncodedString())); }"
+        }.joined(separator: "\n")
+    }()
 }
