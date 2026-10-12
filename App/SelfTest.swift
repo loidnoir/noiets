@@ -100,6 +100,10 @@ enum SelfTest {
         out["windowFrame"] = window.map { NSStringFromRect($0.frame) } ?? "<none>"
 
         if let window {
+            out["nativeWindowChrome"] = window.titleVisibility == .hidden
+                && window.toolbarStyle == .unified
+                && [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton]
+                    .allSatisfy { window.standardWindowButton($0) != nil }
             var textViews: [NSTextView] = []
             var outlines: [NSOutlineView] = []
             func walk(_ view: NSView) {
@@ -860,8 +864,7 @@ enum SelfTest {
             _ = sidebar // (tree already focused)
             keyTo(outline, "g")
             keyTo(outline, "g")
-            keyTo(outline, "2")
-            keyTo(outline, "j") // Trash fixed row
+            keyTo(outline, "j") // Trash follows unified Search
             keyTo(outline, "\r", keyCode: 36) // open Trash view
             if let list = window.firstResponder as? NSTableView, !(list is NSOutlineView) {
                 let rowsBefore = list.numberOfRows
@@ -876,13 +879,12 @@ enum SelfTest {
             }
         }
 
-        // Views (built-in Recent): Enter on the fixed row focuses its LIST;
+        // Unified Search: Enter on the fixed row focuses its LIST;
         // j/k navigate; Enter opens a note; Esc stays in the list.
         keyTo(tv, "h", control: true)
         if let outline = focusedOutline() {
             keyTo(outline, "g")
-            keyTo(outline, "g") // first row = Search
-            keyTo(outline, "j") // Views
+            keyTo(outline, "g") // first row = unified Search
             keyTo(outline, "\r", keyCode: 36)
             let list = window.firstResponder as? NSTableView
             result["recentListFocused"] = list != nil && !(list is NSOutlineView)
@@ -938,19 +940,23 @@ enum SelfTest {
             return found
         }
 
-        // Row structure: Search / Views / Trash / Recent(view) / spacer / tree…
+        // One Search entry, no duplicate Views page.
         if let outline = findViews(NSOutlineView.self).first {
-            result["viewsRowPresent"] = outline.numberOfRows >= 5
+            let fixed = (0..<outline.numberOfRows).compactMap { row -> SidebarViewController.Fixed? in
+                guard let item = outline.item(atRow: row) as? SidebarViewController.Item,
+                      case .fixed(let fixed) = item.kind else { return nil }
+                return fixed
+            }
+            result["unifiedSearchOnly"] = fixed == [.search, .trash]
         }
 
-        // Open Views via keys: tree → gg → j → Enter = built-in Recent list.
+        // Open unified Search via keys: tree → gg → Enter.
         window.makeFirstResponder(tv)
         keyTo(tv, "\u{1B}", keyCode: 53)
         keyTo(tv, "h", control: true)
         if let outline = window.firstResponder as? NSOutlineView {
             keyTo(outline, "g")
             keyTo(outline, "g")
-            keyTo(outline, "j")
             keyTo(outline, "\r", keyCode: 36)
         }
         let list = window.firstResponder as? NSTableView
@@ -976,6 +982,8 @@ enum SelfTest {
         result["savedViewListed"] = wc.session.savedViews.contains {
             $0.name == "ProbeView" && $0.query == "tag:probetag"
         }
+        let quickItems = wc.quickOpenItems(for: "ProbeView")
+        result["savedViewQuickOpenFirst"] = quickItems.first?.kind == .savedView && quickItems.first?.title == "ProbeView"
         wc.session.deleteView(named: "ProbeView")
         result["savedViewDeleted"] = !wc.session.savedViews.contains { $0.name == "ProbeView" }
 

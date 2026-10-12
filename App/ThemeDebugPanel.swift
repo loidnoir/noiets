@@ -13,8 +13,8 @@ final class ThemeDebugPanel: NSWindowController, NSTextFieldDelegate {
     private let onBackdropChange: (EditorBackdropSettings) -> Void
     private let readBackdropBackend: () -> String
     private let transparencyToggle = NSButton(checkboxWithTitle: "Transparency enabled", target: nil, action: nil)
-    private let opacitySlider = NSSlider(value: 90, minValue: 0, maxValue: 100, target: nil, action: nil)
-    private let blurSlider = NSSlider(value: 20, minValue: 0, maxValue: Double(EditorBackdropSettings.maximumBlurRadius), target: nil, action: nil)
+    private let opacitySlider = NSSlider(value: 85, minValue: 0, maxValue: 100, target: nil, action: nil)
+    private let blurSlider = NSSlider(value: 12, minValue: 0, maxValue: Double(EditorBackdropSettings.maximumBlurRadius), target: nil, action: nil)
     private let opacityValue = NSTextField(labelWithString: "")
     private let blurValue = NSTextField(labelWithString: "")
     private let backdropHelp = NSTextField(wrappingLabelWithString: "")

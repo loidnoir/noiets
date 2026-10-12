@@ -3,13 +3,10 @@ import EditorKit
 import IndexKit
 import RenderKit
 
-/// The list view behind the Search / Recent sidebar items (and tag browsing
-/// from the palette). Lives in the editor pane; opening a row swaps back to
-/// the editor.
+/// Unified filter-capable Search, saved queries, and tag browsing.
 @MainActor
 final class SearchViewController: NSViewController {
     enum Mode: Equatable {
-        case search
         case tag(String)
         case view(ViewRef)
     }
@@ -30,7 +27,8 @@ final class SearchViewController: NSViewController {
         }
     }
 
-    private var mode: Mode = .search
+    private var mode: Mode = .view(.unnamed)
+    private let queryCompletion = WikiLinkAutocomplete()
     private let searchField = NSSearchField()
     private let saveButton = NSButton(title: "Save", target: nil, action: nil)
     private let headerLabel = NSTextField(labelWithString: "")
@@ -41,8 +39,7 @@ final class SearchViewController: NSViewController {
     /// The query as last saved — the Save affordance appears when the live
     /// field differs from it.
     private var savedBaseline = ""
-    /// Plain-search text, cached across mode switches so a NoQL query never
-    /// leaks into FTS search and vice versa.
+    /// Preserve the unsaved Search query while opening named saved views.
     private var lastSearchText = ""
 
     init(session: VaultSession) {
@@ -67,6 +64,8 @@ final class SearchViewController: NSViewController {
         searchField.sendsSearchStringImmediately = true
         searchField.delegate = self // ↓/Return → list, Esc → sidebar
         searchField.translatesAutoresizingMaskIntoConstraints = false
+        NotificationCenter.default.addObserver(self, selector: #selector(queryCaretChanged(_:)),
+                                               name: NSTextView.didChangeSelectionNotification, object: nil)
 
         tableView.onKey = { [weak self] event in
             self?.handleListKey(event) ?? false
@@ -134,16 +133,12 @@ final class SearchViewController: NSViewController {
 
     func show(mode: Mode) {
         _ = view // force load
-        if case .search = self.mode, case .search = mode {} else if case .search = self.mode {
-            lastSearchText = searchField.stringValue // leaving plain search
+        queryCompletion.hide()
+        if case .view(let ref) = self.mode, ref.isBuiltin {
+            lastSearchText = searchField.stringValue
         }
         self.mode = mode
         switch mode {
-        case .search:
-            headerLabel.stringValue = "Search"
-            searchField.isHidden = false
-            searchField.placeholderString = "Search project"
-            searchField.stringValue = lastSearchText
         case .tag(let name):
             headerLabel.stringValue = "#\(name)"
             searchField.isHidden = true
@@ -151,7 +146,7 @@ final class SearchViewController: NSViewController {
             headerLabel.stringValue = ref.name
             searchField.isHidden = false
             searchField.placeholderString = "tag:x folder:Notes words… sort:modified"
-            searchField.stringValue = ref.query
+            searchField.stringValue = ref.isBuiltin ? lastSearchText : ref.query
             savedBaseline = ref.query
         }
         updateSaveButton()
@@ -173,18 +168,57 @@ final class SearchViewController: NSViewController {
         updateSaveButton()
         styleQueryTokens()
         reload()
+        updateQueryCompletion()
+    }
+
+    override func viewWillDisappear() {
+        queryCompletion.hide()
+        super.viewWillDisappear()
+    }
+
+    @objc private func queryCaretChanged(_ notification: Notification) {
+        guard let editor = notification.object as? NSTextView,
+              editor === searchField.currentEditor() else { return }
+        // AppKit posts selection changes before finishing field-editor edits.
+        DispatchQueue.main.async { [weak self] in self?.updateQueryCompletion() }
+    }
+
+    private func updateQueryCompletion() {
+        guard case .view = mode, let window = view.window,
+              let editor = searchField.currentEditor() as? NSTextView,
+              !editor.hasMarkedText() else { queryCompletion.hide(); return }
+        let tags = (try? session.index?.allTags().map(\.name)) ?? []
+        let folders = session.allFolders().map { session.vault.relativePath(of: $0.url) }
+        let properties = (try? session.index?.queryCompletionProperties()) ?? [:]
+        let text = searchField.stringValue
+        let selection = editor.selectedRange()
+        guard selection.length == 0 else { queryCompletion.hide(); return }
+        let suggestions = ViewQueryCompletion.suggestions(in: text, caret: selection.location,
+                                                          tags: tags, folders: folders, properties: properties)
+        let rect = window.convertToScreen(searchField.convert(searchField.bounds, to: nil))
+        queryCompletion.show(suggestions: suggestions.map(\.text), at: rect, parent: window) { [weak self, weak editor] picked in
+            guard let self, let editor, self.searchField.stringValue == text, editor.selectedRange() == selection,
+                  let suggestion = suggestions.first(where: { $0.text == picked }) else { return }
+            // Use the native field editor so undo and caret placement survive.
+            guard editor.shouldChangeText(in: suggestion.range, replacementString: picked) else { return }
+            editor.replaceCharacters(in: suggestion.range, with: picked)
+            editor.didChangeText()
+            editor.setSelectedRange(NSRange(location: suggestion.range.location + (picked as NSString).length, length: 0))
+            self.queryChanged()
+        }
     }
 
     /// Chips valid filter tokens in the query field (code-block style,
     /// secondary color) — malformed tokens visibly stay plain.
     private func styleQueryTokens() {
         guard case .view = mode,
-              let editor = searchField.currentEditor() as? NSTextView,
+              let editor = searchField.currentEditor() as? NSTextView, !editor.hasMarkedText(),
               let storage = editor.textStorage else { return }
         let text = searchField.stringValue
         let full = NSRange(location: 0, length: (text as NSString).length)
         guard storage.length == full.length else { return }
         let theme = EditorTheme.standard()
+        let selection = editor.selectedRange()
         storage.beginEditing()
         storage.removeAttribute(.backgroundColor, range: full)
         storage.addAttribute(.foregroundColor, value: NSColor.labelColor, range: full)
@@ -193,6 +227,7 @@ final class SearchViewController: NSViewController {
             storage.addAttribute(.foregroundColor, value: NSColor.secondaryLabelColor, range: range)
         }
         storage.endEditing()
+        editor.setSelectedRange(selection)
     }
 
     // MARK: Saving views
@@ -218,7 +253,7 @@ final class SearchViewController: NSViewController {
             return
         }
 
-        // Saving from the built-in Recent view creates a new named view.
+        // Saving Search creates a new named view.
         guard let window = view.window else { return }
         let alert = NSAlert()
         alert.messageText = "Save View"
@@ -248,14 +283,6 @@ final class SearchViewController: NSViewController {
     private func reload() {
         guard let index = session.index else { return }
         switch mode {
-        case .search:
-            let query = searchField.stringValue
-            if query.trimmingCharacters(in: .whitespaces).isEmpty {
-                rows = []
-            } else {
-                let hits = (try? index.searchNotes(query)) ?? []
-                rows = hits.map { .note(title: $0.title, detail: $0.snippet, relPath: $0.relPath) }
-            }
         case .tag(let name):
             let notes = (try? index.notes(withTag: name)) ?? []
             rows = notes.map { .note(title: $0.title, detail: $0.relPath, relPath: $0.relPath) }
@@ -351,6 +378,7 @@ final class SearchViewController: NSViewController {
     /// Focus the results list, selecting the first note row if nothing is.
     func focusList() {
         _ = view
+        queryCompletion.hide()
         view.window?.makeFirstResponder(tableView)
         if tableView.selectedRow < 0, let first = firstNoteRow {
             tableView.selectRowIndexes(IndexSet(integer: first), byExtendingSelection: false)
@@ -361,7 +389,7 @@ final class SearchViewController: NSViewController {
     /// Where activation should put focus: the field for empty searches, the
     /// list everywhere else.
     func focusPreferred() {
-        if case .search = mode, searchField.stringValue.isEmpty {
+        if case .view(let ref) = mode, ref.isBuiltin, searchField.stringValue.isEmpty {
             focusSearch()
         } else {
             focusList()
@@ -457,7 +485,7 @@ final class SearchViewController: NSViewController {
         case "l": openRow(tableView.selectedRow)
         case "/":
             switch mode {
-            case .search, .view: focusSearch()
+            case .view: focusSearch()
             case .tag: return false
             }
         default:
@@ -491,7 +519,11 @@ final class SearchViewController: NSViewController {
 // MARK: - Search field keys
 
 extension SearchViewController: NSSearchFieldDelegate {
+    func controlTextDidChange(_ notification: Notification) { queryChanged() }
+    func controlTextDidEndEditing(_ notification: Notification) { queryCompletion.hide() }
+
     func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+        if NSApp.currentEvent?.modifierFlags.contains(.command) != true, queryCompletion.handleCommand(selector) { return true }
         switch selector {
         case #selector(NSResponder.moveDown(_:)), #selector(NSResponder.insertNewline(_:)):
             focusList()

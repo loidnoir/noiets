@@ -3,11 +3,12 @@ import Testing
 import RenderKit
 
 struct EditorBackdropPreferencesTests {
-    @Test func freshInstallsKeepOpaqueDefaults() {
+    @Test func freshInstallsUseGlassDefaultsWithoutWritingPreferences() {
         let name = "noiets.backdrop-test.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: name)!
         defer { defaults.removePersistentDomain(forName: name) }
-        #expect(EditorBackdropPreferences.load(defaults: defaults) == EditorBackdropSettings())
+        let settings = EditorBackdropPreferences.load(defaults: defaults)
+        #expect(settings.isEnabled && settings.backgroundOpacity == 0.85 && settings.blurRadius == 12)
         #expect(defaults.persistentDomain(forName: name)?.isEmpty != false)
     }
 

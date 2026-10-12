@@ -9,7 +9,7 @@ public final class WikiLinkAutocomplete: NSPanel {
     private var suggestions: [String] = []
     private var onPick: ((String) -> Void)?
 
-    init() {
+    public init() {
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: 320, height: 180),
             styleMask: [.borderless],
@@ -89,7 +89,7 @@ public final class WikiLinkAutocomplete: NSPanel {
         }
     }
 
-    func show(suggestions: [String], at screenRect: NSRect, parent: NSWindow, onPick: @escaping (String) -> Void) {
+    public func show(suggestions: [String], at screenRect: NSRect, parent: NSWindow, onPick: @escaping (String) -> Void) {
         self.suggestions = Array(suggestions.prefix(8))
         self.onPick = onPick
         guard !self.suggestions.isEmpty else {
@@ -108,11 +108,25 @@ public final class WikiLinkAutocomplete: NSPanel {
         orderFront(nil)
     }
 
-    func hide() {
+    public func hide() {
         parent?.removeChildWindow(self)
         orderOut(nil)
         suggestions = []
         onPick = nil
+    }
+
+    /// NSTextField delegates route the same commands as the editor popup.
+    public func handleCommand(_ selector: Selector) -> Bool {
+        guard isActive else { return false }
+        switch selector {
+        case #selector(NSResponder.moveDown(_:)): move(1)
+        case #selector(NSResponder.moveUp(_:)): move(-1)
+        case #selector(NSResponder.insertNewline(_:)), #selector(NSResponder.insertTab(_:)):
+            pick(row: tableView.selectedRow)
+        case #selector(NSResponder.cancelOperation(_:)): hide()
+        default: return false
+        }
+        return true
     }
 
     private func move(_ delta: Int) {

@@ -57,6 +57,14 @@ final class MainWindowController: NSWindowController {
         )
         window.titlebarAppearsTransparent = true
         window.titlebarSeparatorStyle = .none
+        window.titleVisibility = .hidden
+        // Native unified chrome supplies the roomier traffic-light inset.
+        // No button reparenting or frame overrides: AppKit owns hover, zoom,
+        // resizing, accessibility, and fullscreen transitions.
+        window.toolbarStyle = .unified
+        let headerToolbar = NSToolbar(identifier: "Noiets.WindowHeader")
+        headerToolbar.allowsUserCustomization = false
+        window.toolbar = headerToolbar
         window.title = session.vault.name
         window.minSize = NSSize(width: 760, height: 480)
         window.center()
@@ -227,7 +235,7 @@ final class MainWindowController: NSWindowController {
         }
         switch env["NOIETS_SHOW"] {
         case "search": showFixed(.search)
-        case "views", "recent": showFixed(.views)
+        case "views", "recent": showFixed(.search)
         case "trash": showFixed(.trash)
         case "docs": openDocs()
         default: break
@@ -331,11 +339,7 @@ final class MainWindowController: NSWindowController {
         session.flushPendingSave()
         switch fixed {
         case .search:
-            searchVC.show(mode: .search)
-            hostVC.show(searchVC)
-            searchVC.focusSearch()
-        case .views:
-            showView(.unnamed) // empty query = everything, newest first
+            showView(.unnamed) // unified Search: filters, saving, and all notes
         case .trash:
             trashVC.reload()
             hostVC.show(trashVC)
@@ -480,6 +484,7 @@ final class MainWindowController: NSWindowController {
 
     @objc func searchVault(_: Any?) {
         sidebarVC.selectFixed(.search)  // triggers showFixed(.search)
+        searchVC.focusSearch()
     }
 
     @objc func exportHTML(_: Any?) {
@@ -598,13 +603,28 @@ final class MainWindowController: NSWindowController {
     // MARK: Overlays
 
     @objc func quickOpen(_: Any?) {
-        guard let window, let index = session.index else { return }
-        PalettePanel.shared.present(over: window, placeholder: "Open note…") { [weak self] query in
-            guard let self else { return [] }
-            let rows = (try? index.quickOpen(query)) ?? []
-            return rows.map { row in
-                PalettePanel.Item(symbol: nil, title: row.title, subtitle: row.relPath,
-                                  image: AppIcons.document(size: 18)) {
+        guard let window, session.index != nil else { return }
+        PalettePanel.shared.present(over: window, placeholder: "Open view or note…") { [weak self] query in
+            self?.quickOpenItems(for: query) ?? []
+        }
+    }
+
+    func quickOpenItems(for query: String) -> [PalettePanel.Item] {
+        guard let index = session.index else { return [] }
+        let destinations = (try? index.quickOpenDestinations(query, views: session.savedViews)) ?? []
+        return destinations.map { destination in
+            switch destination {
+            case .view(let ref):
+                return PalettePanel.Item(symbol: nil, title: ref.name, subtitle: ref.query,
+                                         image: AppIcons.folder(size: 18), kind: .savedView) { [weak self] in
+                    guard let self else { return }
+                    self.sidebarVC.selectView(named: ref.name)
+                    self.showView(ViewRef(name: ref.name, query: ref.query, isBuiltin: false))
+                }
+            case .note(let row):
+                return PalettePanel.Item(symbol: nil, title: row.title, subtitle: row.relPath,
+                                         image: AppIcons.document(size: 18)) { [weak self] in
+                    guard let self else { return }
                     let url = self.session.url(forRelPath: row.relPath)
                     self.open(noteAt: url)
                     self.sidebarVC.select(url: url, notify: false)

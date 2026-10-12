@@ -1,22 +1,22 @@
 import AppKit
 import VaultStore
 
-/// The left pane: Search / Recent / Trash, a hairline divider, then the vault
+/// The left pane: Search / Trash, a hairline divider, then the vault
 /// folder tree with files as leaves. Flat NSOutlineView — no source-list
 /// vibrancy, no bubbles.
 /// A sidebar view row: a named NoQL query from the vault's
-/// `.noiets/views.json`. `unnamed` backs the fixed Views item itself — an
+/// `.noiets/views.json`. `unnamed` backs the fixed Search item itself — an
 /// empty query (everything, newest first) that saving turns into a real view.
 struct ViewRef: Equatable {
     var name: String
     var query: String
     var isBuiltin: Bool
 
-    static let unnamed = ViewRef(name: "Views", query: "", isBuiltin: true)
+    static let unnamed = ViewRef(name: "Search", query: "", isBuiltin: true)
 }
 
 @MainActor
-final class SidebarViewController: NSViewController {
+final class SidebarViewController: NSViewController, NSMenuDelegate {
     private let session: VaultSession
 
     var onSelectNote: ((URL) -> Void)?
@@ -27,6 +27,7 @@ final class SidebarViewController: NSViewController {
     var onFocusEditor: (() -> Void)?
 
     private let scrollView = NSScrollView()
+    private var scrollTopConstraint: NSLayoutConstraint?
     private let outlineView = SidebarOutlineView()
     private let modeBar = ColorView(color: UITheme.sidebarBackground)
     private let modeLabel = NSTextField(labelWithString: "NORMAL")
@@ -36,12 +37,11 @@ final class SidebarViewController: NSViewController {
     // MARK: Model
 
     enum Fixed: Int, CaseIterable {
-        case search, views, trash
+        case search, trash
 
         var title: String {
             switch self {
             case .search: return "Search"
-            case .views: return "Views"
             case .trash: return "Trash"
             }
         }
@@ -49,7 +49,6 @@ final class SidebarViewController: NSViewController {
         var symbol: String {
             switch self {
             case .search: return "magnifyingglass"
-            case .views: return "line.3.horizontal.decrease"
             case .trash: return "trash"
             }
         }
@@ -119,7 +118,10 @@ final class SidebarViewController: NSViewController {
         outlineView.allowsMultipleSelection = true  // tree visual mode (v)
         outlineView.dataSource = self
         outlineView.delegate = self
-        outlineView.menu = buildContextMenu()
+        let menu = NSMenu()
+        UITheme.styleMenu(menu)
+        menu.delegate = self
+        outlineView.menu = menu
 
         // Click anywhere on a folder row to open/close it.
         outlineView.target = self
@@ -153,11 +155,10 @@ final class SidebarViewController: NSViewController {
         modeBar.addSubview(modeLabel)
         view.addSubview(modeBar)
 
+        let scrollTop = scrollView.topAnchor.constraint(equalTo: view.topAnchor, constant: 10)
+        scrollTopConstraint = scrollTop
         NSLayoutConstraint.activate([
-            // Content starts a breath below the titlebar, like Things.
-            scrollView.topAnchor.constraint(
-                equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 10
-            ),
+            scrollTop,
             scrollView.bottomAnchor.constraint(equalTo: modeBar.topAnchor),
             scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -176,6 +177,14 @@ final class SidebarViewController: NSViewController {
         outlineView.reloadData()
         session.onTreeChange { [weak self] in self?.reload() }
         session.onViewsChange { [weak self] in self?.reload() }
+    }
+
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        // Trim the empty lower portion of the unified header, without moving
+        // its native buttons. Keep a normal inset when fullscreen hides it.
+        let top = max(10, view.safeAreaInsets.top - 12)
+        if scrollTopConstraint?.constant != top { scrollTopConstraint?.constant = top }
     }
 
     // MARK: Items
@@ -204,12 +213,33 @@ final class SidebarViewController: NSViewController {
 
     func reload() {
         let selected = selectedNodeURL()
+        let selectedView = selectedItem?.viewRef?.name
+        let selectedFixed: Fixed? = {
+            if case .fixed(let fixed) = selectedItem?.kind { return fixed }
+            return nil
+        }()
         rebuildItems()
         outlineView.reloadData()
         restoreExpansion(items: rootItems)
         if let selected, itemsByURL[selected] != nil {
             select(url: selected, notify: false)
+        } else if let selectedView {
+            selectView(named: selectedView)
+        } else if let selectedFixed {
+            suppressSelectionCallback = true
+            selectFixed(selectedFixed)
+            suppressSelectionCallback = false
         }
+    }
+
+    func selectView(named name: String) {
+        guard let item = rootItems.first(where: { $0.viewRef?.name == name }) else { return }
+        let row = outlineView.row(forItem: item)
+        guard row >= 0 else { return }
+        suppressSelectionCallback = true
+        outlineView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+        suppressSelectionCallback = false
+        outlineView.scrollRowToVisible(row)
     }
 
     private func restoreExpansion(items: [Item]) {
@@ -264,17 +294,31 @@ final class SidebarViewController: NSViewController {
 
     // MARK: Context menu
 
-    private func buildContextMenu() -> NSMenu {
-        let menu = NSMenu()
-        UITheme.styleMenu(menu)
-        menu.autoenablesItems = true
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        let context = outlineView.clickedRow >= 0 ? outlineView.item(atRow: outlineView.clickedRow) as? Item : nil
+        populateContextMenu(menu, for: context)
+    }
+
+    func populateContextMenu(_ menu: NSMenu, for context: Item?) {
+        menu.removeAllItems()
+        if let ref = context?.viewRef {
+            let rename = item("Rename View", #selector(ctxRenameView(_:)))
+            let delete = item("Delete View", #selector(ctxDeleteView(_:)))
+            rename.representedObject = ref
+            delete.representedObject = ref
+            menu.addItem(rename)
+            menu.addItem(delete)
+            return
+        }
+        if let context, context.fileNode == nil { return }
         menu.addItem(item("Add Note", #selector(ctxNewNote(_:)), icon: AppIcons.addDocument(size: 15)))
         menu.addItem(item("Add Folder", #selector(ctxNewFolder(_:)), icon: AppIcons.addFolder(size: 15)))
-        menu.addItem(.separator())
-        menu.addItem(item("Reveal in Finder", #selector(ctxReveal(_:)), icon: AppIcons.finder(size: 15)))
-        menu.addItem(.separator())
-        menu.addItem(item("Move to Trash", #selector(ctxTrash(_:)), icon: AppIcons.trash(size: 15)))
-        return menu
+        if context?.fileNode != nil {
+            menu.addItem(.separator())
+            menu.addItem(item("Reveal in Finder", #selector(ctxReveal(_:)), icon: AppIcons.finder(size: 15)))
+            menu.addItem(.separator())
+            menu.addItem(item("Move to Trash", #selector(ctxTrash(_:)), icon: AppIcons.trash(size: 15)))
+        }
     }
 
     private func item(_ title: String, _ action: Selector, icon: NSImage? = nil) -> NSMenuItem {
@@ -296,13 +340,30 @@ final class SidebarViewController: NSViewController {
         return node.isFolder ? node.url : node.url.deletingLastPathComponent()
     }
 
+    @objc private func ctxRenameView(_ sender: NSMenuItem) {
+        guard let ref = sender.representedObject as? ViewRef else { return }
+        renameViewRow(ref)
+    }
+
+    @objc private func ctxDeleteView(_ sender: NSMenuItem) {
+        guard let ref = sender.representedObject as? ViewRef else { return }
+        deleteViewRow(ref)
+    }
+
     @objc private func ctxNewNote(_: Any?) {
+        guard clickedContextIsFilesystem else { return }
         guard let url = session.createNote(in: clickedFolderURL()) else { return }
         select(url: url, notify: false)
         onSelectNote?(url)
     }
 
+    private var clickedContextIsFilesystem: Bool {
+        guard outlineView.clickedRow >= 0 else { return true }
+        return (outlineView.item(atRow: outlineView.clickedRow) as? Item)?.fileNode != nil
+    }
+
     @objc private func ctxNewFolder(_: Any?) {
+        guard clickedContextIsFilesystem else { return }
         _ = session.createFolder(in: clickedFolderURL())
     }
 
@@ -820,12 +881,14 @@ final class SidebarViewController: NSViewController {
     }
 
     private func createNoteAtSelection() {
+        guard selectedItem?.viewRef == nil else { NSSound.beep(); return }
         guard let url = session.createNote(in: selectionContextFolder) else { return }
         select(url: url, notify: false)
         onSelectNote?(url)
     }
 
     private func createFolderAtSelection() {
+        guard selectedItem?.viewRef == nil else { NSSound.beep(); return }
         if let url = session.createFolder(in: selectionContextFolder) {
             select(url: url, notify: false)
             focusTree()
@@ -871,6 +934,9 @@ final class SidebarViewController: NSViewController {
     /// Diagnostics for the self-test: exercises toggling + drag wiring.
     var sidebarDebugInfo: [String: Any] {
         var info: [String: Any] = [:]
+        let menu = NSMenu()
+        populateContextMenu(menu, for: Item(.view(ViewRef(name: "Probe", query: "", isBuiltin: false))))
+        info["savedViewHasOnlyQueryActions"] = menu.items.map(\.title) == ["Rename View", "Delete View"]
         info["actionWired"] =
             outlineView.action == #selector(rowClicked)
             && outlineView.target === self
@@ -954,7 +1020,6 @@ extension SidebarViewController: NSOutlineViewDelegate {
             let custom: NSImage?
             switch fixed {
             case .trash: custom = AppIcons.trash(size: 16)
-            case .views: custom = AppIcons.view(size: 16, template: false)
             case .search: custom = nil
             }
             return SidebarCellView.make(
@@ -1109,7 +1174,8 @@ extension SidebarViewController {
         proposedItem item: Any?,
         proposedChildIndex _: Int
     ) -> NSDragOperation {
-        guard let sources = draggedURLs(info), !sources.isEmpty else { return [] }
+        guard let sources = draggedURLs(info), !sources.isEmpty,
+              (item as? Item)?.viewRef == nil else { return [] }
         let (targetItem, folder) = dropTarget(for: item)
         let target = folder.standardizedFileURL
         for source in sources.map(\.standardizedFileURL) {
@@ -1129,7 +1195,8 @@ extension SidebarViewController {
         item: Any?,
         childIndex _: Int
     ) -> Bool {
-        guard let sources = draggedURLs(info), !sources.isEmpty else { return false }
+        guard let sources = draggedURLs(info), !sources.isEmpty,
+              (item as? Item)?.viewRef == nil else { return false }
         let (_, folder) = dropTarget(for: item)
         expandedURLs.insert(folder)  // reveal where things landed
         guard let lastMoved = session.moveItems(sources, into: folder).last else { return false }

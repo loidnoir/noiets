@@ -32,7 +32,7 @@ struct AppColorsTests {
             #expect(AppColors.hex(theme.accentColor) == "#123456")
             #expect(AppColors.hex(AppColors.color(.sidebarFocusedSelection)).hasPrefix("#123456"))
         }
-        #expect(AppColors.hex(AppColors.resolved(.primary, in: .light)) == "#14A4C4")
+        #expect(AppColors.hex(AppColors.resolved(.primary, in: .light)) == "#5FAAEC")
         let json = try #require(AppColors.paletteJSON().data(using: .utf8))
         let palette = try #require(JSONSerialization.jsonObject(with: json) as? [String: [String: String]])
         #expect(palette["dark"]?["primary"] == "#123456")
@@ -72,17 +72,22 @@ struct AppColorsTests {
         #expect(editor.string.hasPrefix("Body"))
     }
 
+    @Test func darkCodeBackgroundMatchesRequestedHexWithoutDarkeningLightMode() {
+        #expect(AppColors.hex(AppColors.resolved(.codeBackground, in: .dark)) == "#1D1D1D")
+        #expect(AppColors.hex(AppColors.resolved(.codeBackground, in: .light)) != "#1D1D1D")
+    }
+
     @Test func primaryAccentIsTheRequestedColorInBothAppearances() {
         for name in [NSAppearance.Name.aqua, .darkAqua] {
             NSAppearance(named: name)!.performAsCurrentDrawingAppearance {
                 for color in [AppColors.primary, EditorTheme.standard().accentColor] {
                     let rgb = color.usingColorSpace(.sRGB)!
-                    #expect(abs(rgb.redComponent - 20.0 / 255) < 0.0001)
-                    #expect(abs(rgb.greenComponent - 164.0 / 255) < 0.0001)
-                    #expect(abs(rgb.blueComponent - 196.0 / 255) < 0.0001)
+                    #expect(abs(rgb.redComponent - 95.0 / 255) < 0.0001)
+                    #expect(abs(rgb.greenComponent - 170.0 / 255) < 0.0001)
+                    #expect(abs(rgb.blueComponent - 236.0 / 255) < 0.0001)
                 }
             }
         }
-        #expect(HTMLExport.html(from: "[Link](https://example.com)", title: "Color").contains("a { color: #14a4c4;"))
+        #expect(HTMLExport.html(from: "[Link](https://example.com)", title: "Color").contains("a { color: #5faaec;"))
     }
 }

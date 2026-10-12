@@ -21,7 +21,7 @@ Pure AppKit + TextKit 2, no web views, no Electron.
 
 | | |
 |---|---|
-| ⌘O | Quick-open notes |
+| ⌘O | Quick-open saved views (first) and notes |
 | ⌘P | Command palette (type `#` to browse tags) |
 | ⇧⌘F | Search the vault |
 | ⌘N / ⇧⌘N | New note / folder |
@@ -78,13 +78,17 @@ make test    # package unit tests (103 tests: markdown, vim, index, export)
 Code layout: `App/` (AppKit shell) and `Packages/NoietsKit/` with strict downward deps —
 `SharedModel` ← `VaultStore`/`MarkdownKit`/`VimKit`(headless) ← `RenderKit`/`IndexKit` ← `EditorKit`.
 
+## Search and saved views
+
+The sidebar's single **Search** page supports full-text words and filters such as `tag:work`, `sort:title`, and `layout:month`. Its syntax suggestions use the same popup as tag completion: arrows select, Return/Tab completes the current token, and Esc dismisses it. **Save** (`⌘⏎`) stores a named query. Saved views lead matching documents in **⌘O**, with accent-colored folder icons and names; their context menu contains only query rename/delete actions, never file or folder creation.
+
 ## PDF export
 
 **File → Export PDF…** creates a paginated, white, print-friendly document using the editor's font hierarchy, spacing, accent-colored list markers, Libron quotes, and monospaced code. Images in `![](path)` and `![[image.png]]` references are embedded into the PDF, including note-relative paths and vault attachment filename lookup. Remote HTTP(S) images are downloaded before printing; unavailable images get a visible placeholder. Printing waits for images, fonts, and Mermaid diagrams to finish loading rather than silently omitting them. Notes and editor state are unchanged.
 
 ## Glass content background
 
-Open the command search with **⌘P**, then search **glass**, **blur**, or **transparency** and choose **Toggle transparency**. It toggles one blurred, translucent backdrop across the entire right-hand content pane: notes, Search, saved Views, Trash, and images. Text and the sidebar retain full opacity. Fresh installs start opaque, with Ghostty-style **90% background opacity / blur radius 20** when enabled. Transparency, opacity, and blur radius are saved in device-local app preferences and restored across restarts and projects. Native fullscreen and macOS **Reduce Transparency** temporarily make the content pane opaque without changing the saved settings.
+Open the command search with **⌘P**, then search **glass**, **blur**, or **transparency** and choose **Toggle transparency**. It toggles one blurred, translucent backdrop across the entire right-hand content pane: notes, Search, saved Views, Trash, and images. Text and the sidebar retain full opacity. Fresh installs start with transparency enabled at **85% background opacity / blur radius 12**. Existing saved choices take precedence. Transparency, opacity, and blur radius are saved in device-local app preferences and restored across restarts and projects. Native fullscreen and macOS **Reduce Transparency** temporarily make the content pane opaque without changing the saved settings.
 
 ## Dev harness
 

@@ -10,7 +10,7 @@ This page is the whole manual. Open it any time with `⌘P → Open Docs`.
 
 ## The window
 
-Two panes: the **sidebar** (Search / Views / Trash, your saved views, the folder tree) and
+Two panes: the **sidebar** (Search / Trash, your saved views, the folder tree) and
 the **content pane** (editor, lists, or an image). A right panel with backlinks and the
 outline toggles with `⌥⌘0`.
 
@@ -78,10 +78,11 @@ markup — and every edit is rejected, while navigation and copying keep working
 bar shows `LOCKED`. `⌘L` again unlocks. Locks live in the project's own database, so they
 survive reinstalls and travel with the folder. This very docs page is permanently locked.
 
-## Views
+## Search and saved views
 
-Views replace bookmarks, recents, and smart folders with one idea: **a saved query**.
-Open **Views** in the sidebar and type filter tokens; results update live:
+**Search** combines full-text search, filter queries, and document browsing. Saved views
+are named queries, not folders. Open **Search** in the sidebar and type filter tokens;
+results update live:
 
 ```
 tag:project folder:Work draft status:done modified:<7d sort:-title limit:50
@@ -101,10 +102,16 @@ tag:project folder:Work draft status:done modified:<7d sort:-title limit:50
 
 Valid filter tokens highlight as chips while you type — a plain token means it didn't
 parse. `layout:` draws accent-colored section headers over the grouped results.
+Syntax suggestions use the same popup as tag completion: arrows select, Return or Tab
+completes the token, and Esc dismisses it. Type `lay` for `layout:`, then `mo` for
+`layout:month`. Tag, folder, and frontmatter values come from the project.
 
 When the query differs from what's saved, a **Save** button appears (`⌘⏎`). Saved views
 are rows in the sidebar — `Enter` opens, `r` renames, `dd` deletes (notes are untouched).
 Definitions live in `.noiets/views.json` inside your project, so they sync with it.
+**⌘O** opens both saved views and notes; matching saved views appear first with accent-colored
+folder icons and names. Their context menu offers Rename View and Delete View, never file
+creation or filesystem actions.
 
 ## Sidebar tree
 

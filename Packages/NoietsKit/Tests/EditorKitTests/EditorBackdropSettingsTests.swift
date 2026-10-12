@@ -2,11 +2,11 @@ import Testing
 import RenderKit
 
 struct EditorBackdropSettingsTests {
-    @Test func ghosttyDefaultsRemainOpaqueUntilEnabledAndTogglesPreserveLevels() {
+    @Test func ghosttyDefaultsUseRequestedGlassAndTogglesPreserveLevels() {
         var settings = EditorBackdropSettings()
-        #expect(!settings.isEnabled)
-        #expect(settings.backgroundOpacity == 0.90)
-        #expect(settings.blurRadius == 20)
+        #expect(settings.isEnabled)
+        #expect(settings.backgroundOpacity == 0.85)
+        #expect(settings.blurRadius == 12)
         settings = EditorBackdropSettings(isEnabled: true, backgroundOpacity: 0.42, blurRadius: 35)
         settings.isEnabled = false
         #expect(settings.backgroundOpacity == 0.42)
@@ -22,7 +22,7 @@ struct EditorBackdropSettingsTests {
         #expect(clamped.backgroundOpacity == 0)
         #expect(clamped.blurRadius == EditorBackdropSettings.maximumBlurRadius)
         let invalid = EditorBackdropSettings(backgroundOpacity: .nan, blurRadius: -20)
-        #expect(invalid.backgroundOpacity == 0.90)
+        #expect(invalid.backgroundOpacity == 0.85)
         #expect(invalid.blurRadius == 0)
     }
 }

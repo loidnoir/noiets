@@ -162,7 +162,7 @@ public enum HTMLExport {
         th, td { border-bottom: 1px solid #ddd; text-align: left; padding: 6px 14px 6px 0; }
         th { border-bottom-width: 2px; }
         mark { background: #ffef9e; }
-        a { color: #14a4c4; text-decoration: none; }
+        a { color: #5faaec; text-decoration: none; }
         hr { border: none; border-top: 1px solid #ddd; margin: 2em 0; }
         .math { color: #8a4a55; font-style: italic; }
         .mermaid svg { max-width: 100%; }

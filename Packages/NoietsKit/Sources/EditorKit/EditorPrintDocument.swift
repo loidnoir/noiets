@@ -58,9 +58,9 @@ public enum EditorPrintDocument {
         h1, h2, h3, h4, h5, h6 { break-after: avoid; }
         ul, ol { margin: 0; padding-left: \(inset)px; }
         li { margin: 0; padding: 0; }
-        li::marker, a { color: #14a4c4; }
+        li::marker, a { color: #5faaec; }
         li.task { list-style: none; position: relative; }
-        li.task input { position: absolute; left: -\(inset)px; top: 3px; margin: 0; accent-color: #14a4c4; }
+        li.task input { position: absolute; left: -\(inset)px; top: 3px; margin: 0; accent-color: #5faaec; }
         li.completed { color: #666; text-decoration: line-through; }
         blockquote { font-family: 'Noiets Armenian', 'Noiets Libron', 'Noiets SF Pro', -apple-system, sans-serif;
           color: #666; border-left: 2px solid #bbb; margin: 0;

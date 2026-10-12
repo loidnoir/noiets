@@ -7,6 +7,8 @@ import RenderKit
 @MainActor
 final class PalettePanel: NSPanel {
     struct Item {
+        enum Kind { case standard, savedView }
+        let kind: Kind
         let symbol: String?
         let title: String
         let subtitle: String?
@@ -14,7 +16,8 @@ final class PalettePanel: NSPanel {
         let action: @MainActor () -> Void
 
         init(symbol: String?, title: String, subtitle: String?,
-             image: NSImage? = nil, action: @escaping @MainActor () -> Void) {
+             image: NSImage? = nil, kind: Kind = .standard, action: @escaping @MainActor () -> Void) {
+            self.kind = kind
             self.symbol = symbol
             self.title = title
             self.subtitle = subtitle
@@ -275,6 +278,9 @@ private final class PaletteCellView: NSTableCellView {
             ?? PaletteCellView(frame: .zero)
         cell.identifier = reuseID
         cell.title.stringValue = item.title
+        cell.title.textColor = item.kind == .savedView ? UITheme.accent : .labelColor
+        cell.title.font = AppFonts.font(ofSize: 15, weight: item.kind == .savedView ? .medium : .regular)
+        cell.icon.contentTintColor = item.kind == .savedView ? UITheme.accent : .secondaryLabelColor
         cell.subtitle.stringValue = item.subtitle ?? ""
         if let image = item.image {
             cell.icon.image = image

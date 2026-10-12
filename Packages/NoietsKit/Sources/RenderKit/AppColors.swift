@@ -48,12 +48,12 @@ public enum AppColors {
         fileprivate func defaultColor(in appearance: Appearance) -> NSColor {
             let dark = appearance == .dark
             switch self {
-            case .primary: return NSColor(srgbRed: 20.0 / 255, green: 164.0 / 255, blue: 196.0 / 255, alpha: 1)
+            case .primary: return NSColor(srgbRed: 95.0 / 255, green: 170.0 / 255, blue: 236.0 / 255, alpha: 1)
             case .editorBackground: return dark ? NSColor(white: 0.145, alpha: 1) : rgb(0.972, 0.970, 0.962)
             case .editorText: return NSColor(white: dark ? 0.86 : 0.16, alpha: 1)
             case .muted: return NSColor(white: dark ? 0.45 : 0.68, alpha: 1)
             case .inlineCode: return dark ? rgb(0.90, 0.51, 0.55) : rgb(0.72, 0.25, 0.35)
-            case .codeBackground: return dark ? rgb(0.173, 0.180, 0.204) : NSColor(white: 0.935, alpha: 1)
+            case .codeBackground: return dark ? NSColor(srgbRed: 29.0 / 255, green: 29.0 / 255, blue: 29.0 / 255, alpha: 1) : NSColor(white: 0.935, alpha: 1)
             case .highlightBackground: return dark ? rgb(0.42, 0.37, 0.12) : rgb(1.0, 0.95, 0.60)
             case .codeKeyword: return dark ? rgb(0.988, 0.365, 0.486) : rgb(0.61, 0.15, 0.55)
             case .codeType: return dark ? rgb(0.463, 0.800, 0.878) : rgb(0.16, 0.42, 0.62)
