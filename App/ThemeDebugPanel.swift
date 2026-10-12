@@ -112,7 +112,7 @@ final class ThemeDebugPanel: NSWindowController, NSTextFieldDelegate {
         document.frame.size.height = CGFloat(AppColors.Role.allCases.count * 40 - 8 + 20)
         scroll.documentView = document
         appearanceLabel.font = AppFonts.font(ofSize: 12)
-        let help = NSTextField(wrappingLabelWithString: "Live preview · #RRGGBB or #RRGGBBAA. Edits affect the current appearance only. Nothing is saved.")
+        let help = NSTextField(wrappingLabelWithString: "Live preview · #RRGGBB or #RRGGBBAA. Colors are session-only; backdrop settings are saved.")
         help.font = AppFonts.font(ofSize: 11)
         help.textColor = .secondaryLabelColor
         let reset = NSButton(title: "Reset All", target: self, action: #selector(resetColors))
@@ -197,7 +197,7 @@ final class ThemeDebugPanel: NSWindowController, NSTextFieldDelegate {
         opacitySlider.isEnabled = !reduced
         blurSlider.isEnabled = !reduced
         backdropHelp.stringValue = reduced
-            ? "Reduce Transparency is on: macOS keeps the editor opaque."
+            ? "Reduce Transparency is on: macOS keeps the content pane opaque. Your backdrop settings are saved."
             : "\(readBackdropBackend()). Radius 0 removes blur. Moving a slider enables transparency; unavailable private API uses a material fallback."
     }
 

@@ -24,7 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var session: VaultSession?
     private var themeDebugPanel: ThemeDebugPanel?
     private var themeRefreshScheduled = false
-    private var editorBackdropSettings = EditorBackdropSettings()
+    private var editorBackdropSettings = EditorBackdropPreferences.load()
 
     /// Sparkle auto-updater: checks the GitHub-hosted appcast in the
     /// background and offers updates in place.
@@ -72,7 +72,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         windowController = wc
         wc.onBackdropSettingsChange = { [weak self, weak wc] settings in
             guard let self, let wc, self.windowController === wc else { return }
-            self.editorBackdropSettings = settings
+            if self.editorBackdropSettings != settings {
+                self.editorBackdropSettings = settings
+                EditorBackdropPreferences.save(settings)
+            }
             self.themeDebugPanel?.syncBackdropControls()
         }
         wc.setEditorBackdropSettings(editorBackdropSettings)

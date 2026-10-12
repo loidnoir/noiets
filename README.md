@@ -80,7 +80,7 @@ Code layout: `App/` (AppKit shell) and `Packages/NoietsKit/` with strict downwar
 
 ## Glass content background
 
-Open the command search with **⌘P**, then search **glass**, **blur**, or **transparency** and choose **Toggle transparency**. It toggles one blurred, translucent backdrop across the entire right-hand content pane: notes, Search, saved Views, Trash, and images. Text and the sidebar retain full opacity. It starts opaque on each launch, with Ghostty-style **90% background opacity / blur radius 20** when enabled. Native fullscreen and macOS **Reduce Transparency** restore the opaque editor.
+Open the command search with **⌘P**, then search **glass**, **blur**, or **transparency** and choose **Toggle transparency**. It toggles one blurred, translucent backdrop across the entire right-hand content pane: notes, Search, saved Views, Trash, and images. Text and the sidebar retain full opacity. Fresh installs start opaque, with Ghostty-style **90% background opacity / blur radius 20** when enabled. Transparency, opacity, and blur radius are saved in device-local app preferences and restored across restarts and projects. Native fullscreen and macOS **Reduce Transparency** temporarily make the content pane opaque without changing the saved settings.
 
 ## Dev harness
 
@@ -94,7 +94,7 @@ The floating Theme Colors panel offers color wells and hex fields (`#RRGGBB` / `
 
 Blur uses the same private WindowServer `CGSSetWindowBackgroundBlurRadius` path as Ghostty, without AppKit material tint on that path. Symbols are dynamically resolved; missing/rejected API calls use an AppKit material fallback, which cannot honor the requested radius. The backdrop stays stable across page changes; blur is cleared on disable, fullscreen, and window close. **This private API is not App Store-safe and may change across macOS releases.** Reduce Transparency disables the sliders and keeps the content pane opaque.
 
-Colors affect the current light/dark appearance without forcing an appearance. **Reset All** restores colors and backdrop defaults; **Copy Palette** includes both color palettes and the `editorBackdrop` values as JSON, ready to share. Reopen the panel via **Window → Theme Colors…**. Nothing is written to preferences or note files; a normal launch uses the original theme.
+Colors affect the current light/dark appearance without forcing an appearance. **Reset All** restores colors and backdrop defaults; **Copy Palette** includes both color palettes and the `editorBackdrop` values as JSON, ready to share. Reopen the panel via **Window → Theme Colors…**. Color experiments are never written to preferences or note files; a normal launch uses the original color theme. Backdrop settings are saved separately and restored on launch.
 
 Environment hooks used by the automated verify loop (all inert in normal runs):
 
