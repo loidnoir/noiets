@@ -7,6 +7,8 @@ public extension NSAttributedString.Key {
     /// Marks a run Live Preview has collapsed (rendered invisible). Used for
     /// caret snapping; never serialized (attributes don't affect copied text).
     static let noietsHidden = NSAttributedString.Key("noietsHidden")
+    /// Display-only colour identity for a rendered tag; never changes the source.
+    static let noietsTagColour = NSAttributedString.Key("noietsTagColour")
 }
 
 /// Applies syntax styling to the raw markdown in the text storage, driven by
@@ -33,6 +35,7 @@ public final class IncrementalHighlighter: NSObject {
     /// Locked documents: every line stays rendered — the caret's paragraph
     /// never reverts to raw source.
     public var alwaysPreview = false
+    public var tagColourProvider: ((String) -> NSColor)?
 
     private var scan: BlockScan?
     private var signature: [Int] = []
@@ -317,7 +320,11 @@ public final class IncrementalHighlighter: NSObject {
                     link(token.range, noiets("open", text.substring(with: tokens[index - 2].range)))
                 }
             case .tagName:
-                link(token.range, noiets("tag", text.substring(with: token.range)))
+                let name = text.substring(with: token.range)
+                let start = index > 0 && tokens[index - 1].kind == .tagMarker ? tokens[index - 1].range.location : token.range.location
+                let range = NSRange(location: start, length: NSMaxRange(token.range) - start)
+                storage.addAttribute(.noietsTagColour, value: tagColourProvider?(name.lowercased()) ?? theme.accentColor, range: range)
+                link(range, noiets("tag", name))
             case .listMarker(let ordered):
                 // Every list style shares one text column (listTextInset from
                 // the marker start): bullets and tasks collapse into it,
@@ -430,10 +437,8 @@ public final class IncrementalHighlighter: NSObject {
         case .wikiLinkMarker:
             storage.addAttribute(.foregroundColor, value: theme.mutedColor, range: range)
 
-        case .tagMarker:
-            storage.addAttribute(.foregroundColor, value: theme.mutedColor, range: range)
-        case .tagName:
-            storage.addAttribute(.foregroundColor, value: theme.accentColor, range: range)
+        case .tagMarker, .tagName:
+            storage.addAttribute(.foregroundColor, value: theme.textColor, range: range)
 
         case .mathMarker:
             storage.addAttribute(.foregroundColor, value: theme.mutedColor, range: range)

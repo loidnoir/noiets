@@ -15,6 +15,9 @@ final class EditorViewController: NSViewController {
     init(session: VaultSession) {
         self.session = session
         super.init(nibName: nil, bundle: nil)
+        editor.tagColourProvider = { [weak session] name in
+            session?.tagColours.colour(for: name) ?? UITheme.accent
+        }
     }
 
     @available(*, unavailable)

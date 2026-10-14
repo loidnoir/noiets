@@ -1,4 +1,5 @@
 import AppKit
+import MarkdownKit
 import RenderKit
 
 extension NSTextLayoutFragment {
@@ -155,13 +156,15 @@ final class TableRowFragment: NSTextLayoutFragment {
     private let isHeader: Bool
     private let columns: [CGFloat]
     private let rowHeight: CGFloat = 30
+    private let tagColourProvider: ((String) -> NSColor)?
 
     init(textElement: NSTextElement, range: NSTextRange?, theme: EditorTheme,
-         cells: [String], isHeader: Bool, columns: [CGFloat]) {
+         cells: [String], isHeader: Bool, columns: [CGFloat], tagColourProvider: ((String) -> NSColor)? = nil) {
         self.theme = theme
         self.cells = cells
         self.isHeader = isHeader
         self.columns = columns
+        self.tagColourProvider = tagColourProvider
         super.init(textElement: textElement, range: range)
     }
 
@@ -198,7 +201,20 @@ final class TableRowFragment: NSTextLayoutFragment {
         for (index, cell) in cells.enumerated() {
             let width = index < columns.count ? columns[index] : 100
             let cellRect = CGRect(x: x + 8, y: point.y + 6, width: width - 20, height: rowHeight - 10)
-            (cell as NSString).draw(in: cellRect, withAttributes: attrs)
+            let text = cell as NSString
+            let tokens = InlineScanner.tokens(text, in: NSRange(location: 0, length: text.length))
+            for (tokenIndex, token) in tokens.enumerated() where token.kind == .tagName {
+                let start = tokenIndex > 0 && tokens[tokenIndex - 1].kind == .tagMarker ? tokens[tokenIndex - 1].range.location : token.range.location
+                let range = NSRange(location: start, length: NSMaxRange(token.range) - start)
+                let prefixWidth = (text.substring(to: start) as NSString).size(withAttributes: attrs).width
+                let size = (text.substring(with: range) as NSString).size(withAttributes: attrs)
+                let rect = CGRect(x: cellRect.minX + prefixWidth, y: cellRect.minY, width: size.width, height: size.height)
+                    .insetBy(dx: -InlineChipStyle.horizontalPadding, dy: -InlineChipStyle.verticalPadding)
+                let colour = tagColourProvider?(text.substring(with: token.range).lowercased()) ?? theme.accentColor
+                InlineChipStyle.tagBackground(colour).setFill()
+                NSBezierPath(roundedRect: rect, xRadius: InlineChipStyle.cornerRadius, yRadius: InlineChipStyle.cornerRadius).fill()
+            }
+            text.draw(in: cellRect, withAttributes: attrs)
             x += width
         }
 

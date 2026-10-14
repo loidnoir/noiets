@@ -82,6 +82,40 @@ Code layout: `App/` (AppKit shell) and `Packages/NoietsKit/` with strict downwar
 
 The sidebar's single **Search** page supports full-text words and filters such as `tag:work`, `sort:title`, and `layout:month`. Its syntax suggestions use the same popup as tag completion: arrows select, Return/Tab completes the current token, and Esc dismisses it. **Save** (`⌘⏎`) stores a named query. Saved views lead matching documents in **⌘O**, with accent-colored folder icons and names; their context menu contains only query rename/delete actions, never file or folder creation.
 
+### Heatmap widget and note dates
+
+Add a pinned, GitHub-style activity grid without changing the results layout:
+
+```text
+folder:Habits sort:created layout:month widget:heatmap?tags=reading,coding,japanese,exercise
+```
+
+`widget:heatmap` shows one aggregate graph; `?tags` discovers tag choices, while
+`?tags=…` specifies them. Tags share compact inline-code-style badges across
+rendered documents (including tables), completion, tag browsing, and the widget:
+normal text colour, 4pt corners, and 2pt horizontal padding. The supplied 48-colour
+palette uses one stable, device-local assignment map per project. Inline code uses
+the same tight horizontal padding. Selecting a tag colours the graph
+and filters the notes below; selecting a day filters those notes further. **All**
+counts each note once. Selections never rewrite the query. The graph covers the
+last year of returned query results and respects `limit:` (default 200, max 1000).
+The tag list sits directly beside the actual grid and matches its height; the
+widget height fits its content, without a colour legend or surplus vertical space.
+At narrow widths, tags become a dropdown and the grid scrolls horizontally.
+
+Date sections, heatmap cells, `sort:created`, and `created:` filters use valid
+frontmatter `created_at` first, otherwise file creation time. Accepts `YYYY-MM-DD`
+or an ISO-8601 timestamp with timezone. Invalid values fall back; files and their
+timestamps are unchanged. `modified:` / `sort:modified` retain actual modification
+time, and Trash retains deletion-time grouping.
+
+Search/saved views support geometry-based **⌃h/j/k/l** navigation between the
+query, visible Save button, graph, tags, and nonempty result list. Search caret and
+local selections survive focus jumps. Return/Space activates Save; plain `j/k`
+select tags; `/` from the tag list or compact dropdown focuses the query without
+changing the selected tag. Graph `h/l` move a week and `j/k` move a day. Return toggles a
+day filter; Esc clears it. Search itself remains a normal text input.
+
 ## PDF export
 
 **File → Export PDF…** creates a paginated, white, print-friendly document using the editor's font hierarchy, spacing, accent-colored list markers, Libron quotes, and monospaced code. Images in `![](path)` and `![[image.png]]` references are embedded into the PDF, including note-relative paths and vault attachment filename lookup. Remote HTTP(S) images are downloaded before printing; unavailable images get a visible placeholder. Printing waits for images, fonts, and Mermaid diagrams to finish loading rather than silently omitting them. Notes and editor state are unchanged.

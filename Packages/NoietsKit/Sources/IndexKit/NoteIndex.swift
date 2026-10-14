@@ -22,6 +22,8 @@ public final class NoteIndex: Sendable {
         public var size: Int
         public var created: Double
         public var wordCount: Int
+        public var frontmatterCreated: Double? = nil
+        public var effectiveCreated: Double { frontmatterCreated ?? created }
 
         public mutating func didInsert(_ inserted: InsertionSuccess) {
             id = inserted.rowID
@@ -35,15 +37,18 @@ public final class NoteIndex: Sendable {
         public let snippet: String
         /// Grouping metadata for view layouts (0 / empty outside view queries).
         public let mtime: Double
+        /// Effective creation date: valid `created_at`, otherwise filesystem creation.
+        public let created: Double
         public let tags: [String]
 
         public init(id: Int64, relPath: String, title: String, snippet: String,
-                    mtime: Double = 0, tags: [String] = []) {
+                    mtime: Double = 0, tags: [String] = [], created: Double = 0) {
             self.id = id
             self.relPath = relPath
             self.title = title
             self.snippet = snippet
             self.mtime = mtime
+            self.created = created
             self.tags = tags
         }
     }
@@ -156,6 +161,20 @@ public final class NoteIndex: Sendable {
                 t.column("originFolder", .text).notNull()
             }
         }
+        migrator.registerMigration("v5") { db in
+            try db.alter(table: "note") { t in
+                t.add(column: "frontmatterCreated", .double)
+            }
+            // Backfill from already indexed properties, without wiping cache or user data.
+            let rows = try Row.fetchAll(db, sql: "SELECT noteId, value FROM note_prop WHERE key = 'created_at'")
+            var values: [Int64: [String]] = [:]
+            for row in rows { values[row["noteId"], default: []].append(row["value"]) }
+            for (id, entries) in values {
+                if let epoch = NoteDate.override(in: ["created_at": entries]) {
+                    try db.execute(sql: "UPDATE note SET frontmatterCreated = ? WHERE id = ?", arguments: [epoch, id])
+                }
+            }
+        }
         return migrator
     }
 
@@ -258,6 +277,7 @@ public final class NoteIndex: Sendable {
             row.mtime = mtime
             row.size = size
             row.wordCount = extracted.wordCount
+            row.frontmatterCreated = NoteDate.override(in: extracted.props)
             try row.save(db)
             guard let noteId = row.id else { return }
 

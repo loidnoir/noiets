@@ -160,6 +160,14 @@ public final class MarkdownEditorView: NSView {
     /// Tag names for # autocompletion, filtered by the partial query
     /// (empty query = bare `#` — the provider decides what to surface).
     public var tagCompletionProvider: ((String) -> [String])?
+    /// Same identity map used by the app's tag lists and heatmap.
+    public var tagColourProvider: ((String) -> NSColor)? {
+        didSet {
+            highlighter.tagColourProvider = tagColourProvider
+            autocomplete.tagColourProvider = tagColourProvider
+            refreshThemeColors()
+        }
+    }
 
     let autocomplete = WikiLinkAutocomplete()
 

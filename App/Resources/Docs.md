@@ -97,8 +97,11 @@ tag:project folder:Work draft status:done modified:<7d sort:-title limit:50
 | `modified:<7d` / `created:>2026-01-01` | date windows (`<` newer, `>` older) |
 | `status:done` | frontmatter property equals; `status:*` = has it |
 | `sort:modified·created·title·words` | order (`-` prefix = ascending) |
-| `layout:week·month·year·tag·folder` | section the list by time, tag, or folder |
-| `limit:N` | cap results |
+| `layout:week·month·year·tag·folder` | section the list by note date, tag, or folder |
+| `widget:heatmap` | pin a rolling-year activity grid above results |
+| `widget:heatmap?tags` | heatmap with automatically discovered tag choices |
+| `widget:heatmap?tags=reading,coding` | heatmap with only these tag choices |
+| `limit:N` | cap results (including widget counts; default 200, maximum 1000) |
 
 Valid filter tokens highlight as chips while you type — a plain token means it didn't
 parse. `layout:` draws accent-colored section headers over the grouped results.
@@ -113,6 +116,58 @@ Definitions live in `.noiets/views.json` inside your project, so they sync with 
 folder icons and names. Their context menu offers Rename View and Delete View, never file
 creation or filesystem actions.
 
+### Note dates and heatmaps
+
+Date layouts, heatmaps, `sort:created`, and `created:` filters share the same date:
+a valid frontmatter **`created_at`**, falling back to the file's creation date.
+For example:
+
+```markdown
+---
+created_at: 2026-10-14
+---
+
+#japanese
+Practised kanji for 20 minutes.
+```
+
+Use `YYYY-MM-DD` or an ISO-8601 timestamp with a timezone, such as
+`2026-10-14T20:30:00+03:00`. Missing or invalid values fall back without rewriting
+the note or filesystem timestamps. `modified:` and `sort:modified` still use the
+actual modification time; Trash groups by deletion time.
+
+```text
+folder:Habits sort:created layout:month widget:heatmap?tags=reading,coding,japanese,exercise
+```
+
+The heatmap is pinned above the independently scrolling notes. Tag badges share the
+same compact inline-code styling throughout rendered notes, tables, completion, tag
+browsing, and the widget: normal text colour, subtle colour tint, 4pt corners, and
+2pt horizontal padding. Inline code has the same tighter side padding. Colours are
+shared across these surfaces, so selecting a tag applies its colour to the graph
+and filters the notes below. **All** counts notes once, even when a note has multiple tags.
+Click a day (or press Return while navigating the grid) to filter notes to it;
+click it again or press Esc in the grid to clear that selection. These selections
+are temporary and never rewrite the saved query. Blank days mean no notes recorded.
+The graph summarises returned query results, including `limit:`, over the last year.
+The tag list sits directly beside the actual grid, with the same height. The widget
+fits its content without a legend or excess bottom space. At narrow widths, the tag
+list becomes a dropdown and the full grid scrolls horizontally.
+Tag colours are remembered locally per project; colours repeat after 48 distinct tags.
+
+### Directional focus
+
+In Search and saved views, **⌃h / ⌃j / ⌃k / ⌃l** move left / down / up / right
+between visible focus regions according to their current geometry. For example,
+⌃l moves from the query to a visible Save button; ⌃h returns to the query with its
+caret preserved. Return or Space activates Save. ⌃h at the page's left boundary
+returns to the sidebar. Hidden buttons and empty result lists are skipped.
+
+Within the tag selector, `j/k` select tags; `h/l` navigate between regions; `/`
+focuses the query field without changing the selected tag (also in the compact dropdown). In the
+graph, `h/l` move a week and `j/k` move a day. The search input remains an ordinary
+text field, not a modal Vim editor.
+
 ## Sidebar tree
 
 nvim-tree style: `j k` move, counts work, `gg G` jump, `Enter`/`l` opens (folders toggle),
@@ -125,7 +180,8 @@ content pane.
 
 All lists speak the same keys: `j k gg G` with counts, `Enter` opens, `dd` acts
 (trash / delete permanently), `/` focuses the query field, `Esc` stays in the list,
-`⌃h` returns to the tree.
+In Search, `⌃h/j/k/l` navigate focus regions; `⌃h` at the left boundary returns to
+the tree. In Trash, `⌃h` returns directly to the tree.
 
 **Trash** is the project-local `.trash` folder (Obsidian-compatible). Restore puts an item
 back into the folder it came from; if that folder is gone, it lands in the project root.

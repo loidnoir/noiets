@@ -22,12 +22,28 @@ public enum ViewQueryCompletion {
         while end < ns.length, !isSpace(end) { end += 1 }
         let prefix = ns.substring(with: NSRange(location: start, length: caret - start)).lowercased()
         guard !prefix.isEmpty else { return [] }
-        let keys = ["layout", "sort", "tag", "folder", "modified", "created", "limit", "title", "text"]
+        let keys = ["widget", "layout", "sort", "tag", "folder", "modified", "created", "limit", "title", "text"]
         var candidates: [String]
         if let colon = prefix.firstIndex(of: ":") {
             let key = String(prefix[..<colon])
             let values: [String]
             switch key {
+            case "widget":
+                let head = "widget:heatmap?tags="
+                if prefix.hasPrefix(head) {
+                    let entered = String(prefix.dropFirst(head.count))
+                    let parts = entered.split(separator: ",", omittingEmptySubsequences: false).map(String.init)
+                    let stem = parts.dropLast().joined(separator: ",")
+                    let used = Set(parts.dropLast())
+                    candidates = tags.filter { !used.contains($0.lowercased()) }.map {
+                        head + (stem.isEmpty ? "" : stem + ",") + $0
+                    }
+                    var seen = Set<String>()
+                    return candidates.filter {
+                        !$0.contains(where: \.isWhitespace) && $0.lowercased().hasPrefix(prefix) && $0.lowercased() != prefix && seen.insert($0).inserted
+                    }.prefix(8).map { Suggestion(text: $0, range: NSRange(location: start, length: end - start)) }
+                }
+                values = ["heatmap", "heatmap?tags", "heatmap?tags="]
             case "layout": values = ["week", "month", "year", "tag", "folder"]
             case "sort": values = ["modified", "created", "title", "words", "-modified", "-created", "-title", "-words"]
             case "tag": values = tags

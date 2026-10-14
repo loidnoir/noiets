@@ -654,7 +654,8 @@ final class MainWindowController: NSWindowController {
                 .map { tag in
                     PalettePanel.Item(
                         symbol: "number", title: "#\(tag.name)",
-                        subtitle: "\(tag.count) note\(tag.count == 1 ? "" : "s")"
+                        subtitle: "\(tag.count) note\(tag.count == 1 ? "" : "s")",
+                        tagColour: session.tagColours.colour(for: tag.name)
                     ) { [weak self] in
                         self?.showTag(tag.name)
                     }

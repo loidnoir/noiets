@@ -22,6 +22,16 @@ public struct ViewQuery: Equatable, Sendable {
         case week, month, year, tag, folder
     }
 
+    public struct Heatmap: Equatable, Sendable {
+        public enum Tags: Equatable, Sendable {
+            case none
+            case discovered
+            case specified([String])
+        }
+        public let tags: Tags
+        public init(tags: Tags = .none) { self.tags = tags }
+    }
+
     public enum DateFilter: Equatable, Sendable {
         case before(Double) // column < epoch
         case after(Double)  // column > epoch
@@ -48,6 +58,7 @@ public struct ViewQuery: Equatable, Sendable {
     public var ascending = false
     public var limit = 200
     public var layout: Layout?
+    public var heatmap: Heatmap?
 
     public init() {}
 
@@ -127,6 +138,21 @@ public struct ViewQuery: Equatable, Sendable {
             guard let n = Int(value) else { return false }
             query.limit = min(max(n, 1), 1000)
             return true
+        case "widget":
+            let normalized = value.lowercased()
+            if normalized == "heatmap" {
+                query.heatmap = Heatmap()
+            } else if normalized == "heatmap?tags" {
+                query.heatmap = Heatmap(tags: .discovered)
+            } else if normalized.hasPrefix("heatmap?tags=") {
+                let names = normalized.dropFirst("heatmap?tags=".count).split(separator: ",", omittingEmptySubsequences: false).map(String.init)
+                guard !names.isEmpty, names.allSatisfy({
+                    $0.range(of: #"^[\p{L}\p{N}_/-]+$"#, options: .regularExpression) != nil
+                }) else { return false }
+                var seen = Set<String>()
+                query.heatmap = Heatmap(tags: .specified(names.filter { seen.insert($0).inserted }))
+            } else { return false }
+            return true
         case "layout":
             guard let layout = Layout(rawValue: value.lowercased()) else { return false }
             query.layout = layout
@@ -149,10 +175,7 @@ public struct ViewQuery: Equatable, Sendable {
             return op == "<" ? .after(epoch) : .before(epoch)
         }
 
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        guard let date = formatter.date(from: rest) else { return nil }
+        guard rest.count == 10, let date = NoteDate.parse(rest) else { return nil }
         let epoch = date.timeIntervalSince1970
         return op == "<" ? .before(epoch) : .after(epoch)
     }
@@ -197,7 +220,7 @@ extension NoteIndex {
             clauses.append("lower(n.title) LIKE ? ESCAPE '\\'")
             arguments.append("%" + escapeLike(term) + "%")
         }
-        for (column, filters) in [("n.created", query.created), ("n.mtime", query.modified)] {
+        for (column, filters) in [("COALESCE(n.frontmatterCreated, n.created)", query.created), ("n.mtime", query.modified)] {
             for filter in filters {
                 switch filter {
                 case .before(let epoch):
@@ -228,7 +251,7 @@ extension NoteIndex {
         let sortColumn: String
         switch query.sort {
         case .modified: sortColumn = "n.mtime"
-        case .created: sortColumn = "n.created"
+        case .created: sortColumn = "COALESCE(n.frontmatterCreated, n.created)"
         case .title: sortColumn = "n.title COLLATE NOCASE"
         case .words: sortColumn = "n.wordCount"
         }
@@ -236,6 +259,7 @@ extension NoteIndex {
 
         let sql = """
         SELECT n.id, n.relPath, n.title, n.mtime,
+               COALESCE(n.frontmatterCreated, n.created) AS effectiveCreated,
                \(hasText ? "snippet(note_fts, 1, '', '', ' … ', 12)" : "''") AS snippet,
                (SELECT group_concat(t.name, ',') FROM note_tag nt
                 JOIN tag t ON t.id = nt.tagId WHERE nt.noteId = n.id) AS tagList
@@ -256,7 +280,8 @@ extension NoteIndex {
                               snippet: $0["snippet"] ?? "",
                               mtime: $0["mtime"] ?? 0,
                               tags: (($0["tagList"] as String?) ?? "")
-                                  .split(separator: ",").map(String.init).sorted())
+                                  .split(separator: ",").map(String.init).sorted(),
+                              created: $0["effectiveCreated"] ?? 0)
                 }
             }
         } catch {

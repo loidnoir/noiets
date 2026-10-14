@@ -13,15 +13,17 @@ final class PalettePanel: NSPanel {
         let title: String
         let subtitle: String?
         var image: NSImage? // custom template icon; wins over `symbol`
+        let tagColour: NSColor?
         let action: @MainActor () -> Void
 
         init(symbol: String?, title: String, subtitle: String?,
-             image: NSImage? = nil, kind: Kind = .standard, action: @escaping @MainActor () -> Void) {
+             image: NSImage? = nil, kind: Kind = .standard, tagColour: NSColor? = nil, action: @escaping @MainActor () -> Void) {
             self.kind = kind
             self.symbol = symbol
             self.title = title
             self.subtitle = subtitle
             self.image = image
+            self.tagColour = tagColour
             self.action = action
         }
     }
@@ -231,6 +233,7 @@ extension PalettePanel: NSTableViewDataSource, NSTableViewDelegate {
     }
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+        guard items.indices.contains(row) else { return nil }
         let item = items[row]
         return PaletteCellView.make(in: tableView, item: item)
     }
@@ -242,6 +245,7 @@ private final class PaletteCellView: NSTableCellView {
 
     private let icon = NSImageView()
     private let title = NSTextField(labelWithString: "")
+    private let tagBadge = TagBadgeView()
     private let subtitle = NSTextField(labelWithString: "")
 
     override init(frame frameRect: NSRect) {
@@ -258,7 +262,9 @@ private final class PaletteCellView: NSTableCellView {
         subtitle.textColor = .tertiaryLabelColor
         subtitle.lineBreakMode = .byTruncatingHead
 
-        let stack = NSStackView(views: [icon, title, subtitle])
+        tagBadge.font = AppFonts.font(ofSize: 15)
+        tagBadge.isHidden = true
+        let stack = NSStackView(views: [icon, title, tagBadge, subtitle])
         stack.orientation = .horizontal
         stack.spacing = 8
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -278,11 +284,17 @@ private final class PaletteCellView: NSTableCellView {
             ?? PaletteCellView(frame: .zero)
         cell.identifier = reuseID
         cell.title.stringValue = item.title
+        cell.title.isHidden = item.tagColour != nil
+        cell.tagBadge.isHidden = item.tagColour == nil
+        cell.tagBadge.name = item.title
+        cell.tagBadge.colour = item.tagColour ?? UITheme.accent
         cell.title.textColor = item.kind == .savedView ? UITheme.accent : .labelColor
         cell.title.font = AppFonts.font(ofSize: 15, weight: item.kind == .savedView ? .medium : .regular)
         cell.icon.contentTintColor = item.kind == .savedView ? UITheme.accent : .secondaryLabelColor
         cell.subtitle.stringValue = item.subtitle ?? ""
-        if let image = item.image {
+        if item.tagColour != nil {
+            cell.icon.isHidden = true
+        } else if let image = item.image {
             cell.icon.image = image
             cell.icon.isHidden = false
         } else if let symbol = item.symbol {

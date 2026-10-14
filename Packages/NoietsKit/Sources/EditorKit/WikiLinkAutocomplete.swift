@@ -8,6 +8,7 @@ public final class WikiLinkAutocomplete: NSPanel {
     private let tableView = NSTableView()
     private var suggestions: [String] = []
     private var onPick: ((String) -> Void)?
+    public var tagColourProvider: ((String) -> NSColor)?
 
     public init() {
         super.init(
@@ -152,28 +153,46 @@ public final class WikiLinkAutocomplete: NSPanel {
     }
 }
 
+@MainActor
+private final class SuggestionCell: NSTableCellView {
+    let badge = TagBadgeView()
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        let label = NSTextField(labelWithString: "")
+        label.font = AppFonts.font(ofSize: 13)
+        label.lineBreakMode = .byTruncatingTail
+        textField = label
+        for child in [label, badge] {
+            child.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(child)
+            NSLayoutConstraint.activate([
+                child.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
+                child.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -10),
+                child.centerYAnchor.constraint(equalTo: centerYAnchor),
+            ])
+        }
+    }
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+}
+
 extension WikiLinkAutocomplete: NSTableViewDataSource, NSTableViewDelegate {
     public func numberOfRows(in tableView: NSTableView) -> Int { suggestions.count }
 
     public func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+        guard suggestions.indices.contains(row) else { return nil }
         let id = NSUserInterfaceItemIdentifier("WikiSuggestion")
-        let cell = tableView.makeView(withIdentifier: id, owner: nil) as? NSTableCellView ?? {
-            let c = NSTableCellView()
-            c.identifier = id
-            let label = NSTextField(labelWithString: "")
-            label.font = AppFonts.font(ofSize: 13)
-            label.lineBreakMode = .byTruncatingTail
-            label.translatesAutoresizingMaskIntoConstraints = false
-            c.addSubview(label)
-            c.textField = label
-            NSLayoutConstraint.activate([
-                label.leadingAnchor.constraint(equalTo: c.leadingAnchor, constant: 10),
-                label.trailingAnchor.constraint(lessThanOrEqualTo: c.trailingAnchor, constant: -10),
-                label.centerYAnchor.constraint(equalTo: c.centerYAnchor),
-            ])
-            return c
-        }()
-        cell.textField?.stringValue = suggestions[row]
+        let cell = tableView.makeView(withIdentifier: id, owner: nil) as? SuggestionCell ?? SuggestionCell()
+        cell.identifier = id
+        let text = suggestions[row]
+        let tag = text.hasPrefix("#") ? String(text.dropFirst())
+            : (text.hasPrefix("tag:") && text.count > 4 ? String(text.dropFirst(4)) : nil)
+        let colour = tag.map { tagColourProvider?($0) ?? AppColors.primary }
+        cell.badge.isHidden = colour == nil
+        cell.textField?.isHidden = colour != nil
+        cell.textField?.stringValue = text
+        cell.badge.name = text
+        cell.badge.colour = colour ?? .controlAccentColor
         return cell
     }
 }

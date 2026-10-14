@@ -32,9 +32,10 @@ class OverlayLineFragment: NSTextLayoutFragment {
         case bullet
         case checkbox(checked: Bool)
         case chip(range: NSRange) // content range, relative to the text element
+        case tag(range: NSRange, colour: NSColor)
     }
 
-    nonisolated static let chipPadding: CGFloat = 4.5
+    nonisolated static let chipPadding: CGFloat = InlineChipStyle.horizontalPadding
 
     struct Span {
         let relativeLocation: Int // span start, relative to the element start
@@ -42,7 +43,7 @@ class OverlayLineFragment: NSTextLayoutFragment {
     }
 
     private let theme: EditorTheme
-    private let spans: [Span]
+    let spans: [Span]
 
     init(textElement: NSTextElement, range: NSTextRange?, theme: EditorTheme, spans: [Span]) {
         self.theme = theme
@@ -70,7 +71,7 @@ class OverlayLineFragment: NSTextLayoutFragment {
     /// One chip rect per visual row. Using TextKit's character positions keeps
     /// the background aligned with actual glyphs and lets long code spans wrap
     /// without painting across the editor column.
-    private func chipRects(for range: NSRange, at point: CGPoint) -> [CGRect] {
+    func chipRects(for range: NSRange, at point: CGPoint) -> [CGRect] {
         textLineFragments.compactMap { line in
             let segment = NSIntersectionRange(range, line.characterRange)
             guard segment.length > 0 else { return nil }
@@ -80,9 +81,9 @@ class OverlayLineFragment: NSTextLayoutFragment {
             let end = line.locationForCharacter(at: NSMaxRange(segment)).x
             let height = bounds.height - 3
             return CGRect(
-                x: point.x + bounds.origin.x + start - Self.chipPadding,
+                x: point.x + bounds.origin.x + min(start, end) - Self.chipPadding,
                 y: point.y + bounds.origin.y + (bounds.height - height) / 2,
-                width: max(end - start, 1) + Self.chipPadding * 2,
+                width: max(abs(end - start), 1) + Self.chipPadding * 2,
                 height: height
             )
         }
@@ -93,10 +94,16 @@ class OverlayLineFragment: NSTextLayoutFragment {
         NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
         // Chip backgrounds go under the glyphs.
         for span in spans {
-            guard case .chip(let range) = span.kind else { continue }
+            let range: NSRange
+            let colour: NSColor
+            switch span.kind {
+            case .chip(let content): range = content; colour = theme.codeBackground
+            case .tag(let content, let identity): range = content; colour = InlineChipStyle.tagBackground(identity)
+            default: continue
+            }
             for rect in chipRects(for: range, at: point) {
-                theme.codeBackground.setFill()
-                NSBezierPath(roundedRect: rect, xRadius: 4, yRadius: 4).fill()
+                colour.setFill()
+                NSBezierPath(roundedRect: rect, xRadius: InlineChipStyle.cornerRadius, yRadius: InlineChipStyle.cornerRadius).fill()
             }
         }
         NSGraphicsContext.restoreGraphicsState()
@@ -116,7 +123,7 @@ class OverlayLineFragment: NSTextLayoutFragment {
             let textMidline = baseline - font.xHeight / 2
 
             switch span.kind {
-            case .chip:
+            case .chip, .tag:
                 break // drawn above, under the glyphs
             case .image(let image):
                 let size = image.size

@@ -1,5 +1,6 @@
 import AppKit
 import IndexKit
+import RenderKit
 import VaultStore
 import os
 
@@ -11,6 +12,7 @@ final class VaultSession {
     private static let log = Logger(subsystem: "com.noiets", category: "vault")
 
     let vault: Vault
+    let tagColours: TagColourStore
     private(set) var tree: FileNode
     /// Multicast: sidebar tree, trash view, … all react to vault changes.
     private var treeObservers: [() -> Void] = []
@@ -49,6 +51,7 @@ final class VaultSession {
 
     init(vault: Vault) {
         self.vault = vault
+        self.tagColours = TagColourStore(namespace: vault.rootURL.path)
         self.tree = VaultScanner.scan(vault)
         self.savedViews = ViewsStore.load(vault: vault)
     }
@@ -96,6 +99,7 @@ final class VaultSession {
         do {
             let index = try NoteIndex(vault: vault)
             self.index = index
+            tagColours.prepare((try? index.allTags().map(\.name)) ?? [])
             try? index.importLegacyTrashOrigins(
                 from: vault.trashURL.appendingPathComponent(".origins.json"))
             let reindexer = Reindexer(index: index) { [weak self] in

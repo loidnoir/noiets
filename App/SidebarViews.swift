@@ -514,9 +514,13 @@ final class SectionHeaderCellView: NSTableCellView {
 
     private let title = NSTextField(labelWithString: "")
     private let line = ColorView(color: UITheme.hairline)
+    private let tagBadge = TagBadgeView()
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
+        tagBadge.font = AppFonts.font(ofSize: 14)
+        tagBadge.isHidden = true
+        tagBadge.translatesAutoresizingMaskIntoConstraints = false
         title.font = AppFonts.font(ofSize: 14, weight: .semibold)
         title.textColor = UITheme.accent
         title.lineBreakMode = .byTruncatingTail
@@ -525,7 +529,11 @@ final class SectionHeaderCellView: NSTableCellView {
         line.translatesAutoresizingMaskIntoConstraints = false
         addSubview(title)
         addSubview(line)
+        addSubview(tagBadge)
         NSLayoutConstraint.activate([
+            tagBadge.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 28),
+            tagBadge.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -20),
+            tagBadge.bottomAnchor.constraint(equalTo: line.topAnchor, constant: -6),
             title.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 28),
             title.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -20),
             title.bottomAnchor.constraint(equalTo: line.topAnchor, constant: -6),
@@ -539,11 +547,15 @@ final class SectionHeaderCellView: NSTableCellView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
-    static func make(in tableView: NSTableView, title: String) -> SectionHeaderCellView {
+    static func make(in tableView: NSTableView, title: String, tagColour: NSColor? = nil) -> SectionHeaderCellView {
         let cell = tableView.makeView(withIdentifier: reuseID, owner: nil) as? SectionHeaderCellView
             ?? SectionHeaderCellView(frame: .zero)
         cell.identifier = reuseID
         cell.title.stringValue = title
+        cell.title.isHidden = tagColour != nil
+        cell.tagBadge.isHidden = tagColour == nil
+        cell.tagBadge.name = "#" + title
+        cell.tagBadge.colour = tagColour ?? UITheme.accent
         return cell
     }
 }

@@ -348,6 +348,12 @@ public final class LivePreviewLayoutController: NSObject {
                                        length: token.range.length)
                 spans.append(.init(relativeLocation: relative.location,
                                    kind: .chip(range: relative)))
+            case .tagName:
+                let start = i > 0 && tokens[i - 1].kind == .tagMarker ? tokens[i - 1].range.location : token.range.location
+                let relative = NSRange(location: start - base, length: NSMaxRange(token.range) - start)
+                let name = text.substring(with: token.range).lowercased()
+                spans.append(.init(relativeLocation: relative.location,
+                                   kind: .tag(range: relative, colour: highlighter?.tagColourProvider?(name) ?? theme.accentColor)))
             default:
                 continue
             }
@@ -447,7 +453,8 @@ extension LivePreviewLayoutController: @preconcurrency NSTextLayoutManagerDelega
                                        theme: theme, spans: spans)
         case .tableRow(let cells, let isHeader, let columns):
             return TableRowFragment(textElement: textElement, range: elementRange, theme: theme,
-                                    cells: cells, isHeader: isHeader, columns: columns)
+                                    cells: cells, isHeader: isHeader, columns: columns,
+                                    tagColourProvider: highlighter?.tagColourProvider)
         case .tableDelimiter:
             return TableDelimiterFragment(textElement: textElement, range: elementRange, theme: theme)
         case .collapsed:

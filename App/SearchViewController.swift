@@ -13,7 +13,7 @@ final class SearchViewController: NSViewController {
 
     private let session: VaultSession
     var onOpenNote: ((URL) -> Void)?
-    /// Esc / ⌃h → back to the sidebar tree.
+    /// ⌃h at the page's left boundary → back to the sidebar tree.
     var onFocusSidebar: (() -> Void)?
 
     /// A list line: a note result, or a section header from `layout:`.
@@ -30,11 +30,16 @@ final class SearchViewController: NSViewController {
     private var mode: Mode = .view(.unnamed)
     private let queryCompletion = WikiLinkAutocomplete()
     private let searchField = NSSearchField()
-    private let saveButton = NSButton(title: "Save", target: nil, action: nil)
+    private let saveButton = FocusableSaveButton(title: "Save", target: nil, action: nil)
     private let headerLabel = NSTextField(labelWithString: "")
+    private let headerTag = TagBadgeView()
     private let tableView = VimTableView()
     private let scrollView = NSScrollView()
     private var rows: [ListRow] = []
+    private let heatmap = HeatmapWidgetView()
+    private var focusRegions: FocusRegionCoordinator?
+    private var searchSelection: NSRange?
+    private var heatmapHeight: NSLayoutConstraint?
 
     /// The query as last saved — the Save affordance appears when the live
     /// field differs from it.
@@ -74,6 +79,10 @@ final class SearchViewController: NSViewController {
         headerLabel.font = AppFonts.font(ofSize: 22, weight: .bold)
         headerLabel.textColor = theme.textColor
         headerLabel.translatesAutoresizingMaskIntoConstraints = false
+        headerTag.font = AppFonts.font(ofSize: 22)
+        headerTag.isHidden = true
+        headerTag.translatesAutoresizingMaskIntoConstraints = false
+        queryCompletion.tagColourProvider = { [weak self] name in self?.session.tagColours.colour(for: name) ?? UITheme.accent }
 
         let column = NSTableColumn(identifier: .init("hit"))
         column.resizingMask = .autoresizingMask
@@ -113,20 +122,77 @@ final class SearchViewController: NSViewController {
         fieldRow.spacing = 8
         fieldRow.translatesAutoresizingMaskIntoConstraints = false
 
+        heatmap.translatesAutoresizingMaskIntoConstraints = false
+        heatmap.isHidden = true
+        heatmap.colourForTag = { [weak self] tag in
+            self?.session.tagColours.colour(for: tag) ?? UITheme.accent
+        }
+        heatmap.onHeightChanged = { [weak self] height in
+            guard let constraint = self?.heatmapHeight, abs(constraint.constant - height) > 0.5 else { return }
+            constraint.constant = height
+        }
+        heatmapHeight = heatmap.heightAnchor.constraint(equalToConstant: 148)
+        heatmap.onSelectionChanged = { [weak self] in self?.reload() }
+        heatmap.onNavigate = { [weak self] direction in self?.focusRegions?.move(direction) }
+        heatmap.onFocusSearch = { [weak self] in self?.focusSearch() }
+
+        let contentStack = NSStackView(views: [fieldRow, heatmap, scrollView])
+        contentStack.orientation = .vertical
+        contentStack.alignment = .centerX
+        contentStack.spacing = 10
+        contentStack.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(headerLabel)
-        container.addSubview(fieldRow)
-        container.addSubview(scrollView)
+        container.addSubview(headerTag)
+        container.addSubview(contentStack)
         NSLayoutConstraint.activate([
             headerLabel.topAnchor.constraint(equalTo: container.safeAreaLayoutGuide.topAnchor, constant: 18),
             headerLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 28),
-            fieldRow.topAnchor.constraint(equalTo: headerLabel.bottomAnchor, constant: 12),
-            fieldRow.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 26),
-            fieldRow.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -26),
-            scrollView.topAnchor.constraint(equalTo: fieldRow.bottomAnchor, constant: 10),
-            scrollView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            headerTag.leadingAnchor.constraint(equalTo: headerLabel.leadingAnchor),
+            headerTag.centerYAnchor.constraint(equalTo: headerLabel.centerYAnchor),
+            headerTag.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -26),
+            contentStack.topAnchor.constraint(equalTo: headerLabel.bottomAnchor, constant: 12),
+            contentStack.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            contentStack.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            contentStack.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            fieldRow.widthAnchor.constraint(equalTo: contentStack.widthAnchor, constant: -52),
+            heatmap.widthAnchor.constraint(equalTo: contentStack.widthAnchor, constant: -40),
+            heatmapHeight!,
+            scrollView.widthAnchor.constraint(equalTo: contentStack.widthAnchor),
         ])
+        configureFocusRegions()
+    }
+
+    private func configureFocusRegions() {
+        let coordinator = FocusRegionCoordinator(root: view)
+        coordinator.register(searchField) { [weak self] in
+            self?.focusSearch()
+            if let self, let selection = self.searchSelection, let editor = self.searchField.currentEditor() as? NSTextView {
+                let length = (self.searchField.stringValue as NSString).length
+                if NSMaxRange(selection) <= length { editor.setSelectedRange(selection) }
+            }
+        }
+        coordinator.register(saveButton, available: { [weak self] in self?.saveButton.isEnabled == true }) { [weak self] in
+            guard let self else { return }
+            self.view.window?.makeFirstResponder(self.saveButton)
+        }
+        coordinator.register(scrollView, available: { [weak self] in self?.firstNoteRow != nil }) { [weak self] in self?.focusList() }
+        coordinator.register(heatmap.graphScroll) { [weak self] in self?.heatmap.focusGraph() }
+        coordinator.register(heatmap.tagScroll) { [weak self] in self?.heatmap.focusTags() }
+        coordinator.register(heatmap.tagPopup) { [weak self] in self?.heatmap.focusTags() }
+        coordinator.beforeMove = { [weak self] in
+            guard let self else { return }
+            if let editor = self.searchField.currentEditor() as? NSTextView { self.searchSelection = editor.selectedRange() }
+            self.pendingKey = nil
+            self.listCount = 0
+            self.queryCompletion.hide()
+        }
+        coordinator.onLeftBoundary = { [weak self] in self?.onFocusSidebar?() }
+        focusRegions = coordinator
+    }
+
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        focusRegions?.start()
     }
 
     // MARK: Modes
@@ -138,11 +204,19 @@ final class SearchViewController: NSViewController {
             lastSearchText = searchField.stringValue
         }
         self.mode = mode
+        heatmap.resetSelection()
+        searchSelection = nil
         switch mode {
         case .tag(let name):
+            headerLabel.isHidden = true
+            headerTag.isHidden = false
+            headerTag.name = "#" + name
+            headerTag.colour = session.tagColours.colour(for: name)
             headerLabel.stringValue = "#\(name)"
             searchField.isHidden = true
         case .view(let ref):
+            headerLabel.isHidden = false
+            headerTag.isHidden = true
             headerLabel.stringValue = ref.name
             searchField.isHidden = false
             searchField.placeholderString = "tag:x folder:Notes words… sort:modified"
@@ -151,6 +225,9 @@ final class SearchViewController: NSViewController {
         }
         updateSaveButton()
         reload()
+        // The content host swaps child views directly; do not rely solely on
+        // AppKit appearance callbacks to arm page-scoped event handling.
+        focusRegions?.start()
     }
 
     func focusSearch() {
@@ -173,6 +250,7 @@ final class SearchViewController: NSViewController {
 
     override func viewWillDisappear() {
         queryCompletion.hide()
+        focusRegions?.stop()
         super.viewWillDisappear()
     }
 
@@ -238,7 +316,9 @@ final class SearchViewController: NSViewController {
             return
         }
         let text = searchField.stringValue.trimmingCharacters(in: .whitespaces)
-        saveButton.isHidden = text == savedBaseline.trimmingCharacters(in: .whitespaces)
+        let hidden = text == savedBaseline.trimmingCharacters(in: .whitespaces)
+        if hidden, view.window?.firstResponder === saveButton { focusSearch() }
+        saveButton.isHidden = hidden
     }
 
     @objc private func saveViewQuery() {
@@ -282,8 +362,10 @@ final class SearchViewController: NSViewController {
 
     private func reload() {
         guard let index = session.index else { return }
+        let selectedPath = tableView.selectedRow >= 0 && tableView.selectedRow < rows.count ? rows[tableView.selectedRow].relPath : nil
         switch mode {
         case .tag(let name):
+            heatmap.isHidden = true
             let notes = (try? index.notes(withTag: name)) ?? []
             rows = notes.map { .note(title: $0.title, detail: $0.relPath, relPath: $0.relPath) }
         case .view:
@@ -291,13 +373,30 @@ final class SearchViewController: NSViewController {
             // reload never clobbers in-flight edits.
             let query = ViewQuery.parse(searchField.stringValue)
             let hits = (try? index.notes(matching: query)) ?? []
-            if let layout = query.layout {
-                rows = sectioned(hits, layout: layout)
+            let wasVisible = !heatmap.isHidden
+            heatmap.isHidden = query.heatmap == nil
+            var visibleHits = hits
+            if let configuration = query.heatmap {
+                session.tagColours.prepare(((try? index.allTags().map(\.name)) ?? hits.flatMap(\.tags)) + HeatmapData.tagChoices(for: configuration, hits: hits))
+                heatmap.configure(configuration, hits: hits)
+                visibleHits = HeatmapData.filtered(hits, tag: heatmap.selectedTag, day: heatmap.selectedDay)
             } else {
-                rows = hits.map { noteRow($0) }
+                heatmap.resetSelection()
+                if wasVisible, let responder = view.window?.firstResponder as? NSView,
+                   responder.isDescendant(of: heatmap) { focusSearch() }
+            }
+            if let layout = query.layout {
+                rows = sectioned(visibleHits, layout: layout)
+            } else {
+                rows = visibleHits.map { noteRow($0) }
             }
         }
         tableView.reloadData()
+        if let selectedPath, let row = rows.firstIndex(where: { $0.relPath == selectedPath }) {
+            tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+        } else if view.window?.firstResponder === tableView, let first = firstNoteRow {
+            selectRow(first)
+        }
     }
 
     private func noteRow(_ hit: NoteIndex.SearchHit) -> ListRow {
@@ -328,7 +427,7 @@ final class SearchViewController: NSViewController {
 
     private func sectionTitles(for hit: NoteIndex.SearchHit,
                                layout: ViewQuery.Layout) -> [String] {
-        let date = Date(timeIntervalSince1970: hit.mtime)
+        let date = Date(timeIntervalSince1970: hit.created)
         let formatter = DateFormatter()
         switch layout {
         case .year:
@@ -382,7 +481,9 @@ final class SearchViewController: NSViewController {
         view.window?.makeFirstResponder(tableView)
         if tableView.selectedRow < 0, let first = firstNoteRow {
             tableView.selectRowIndexes(IndexSet(integer: first), byExtendingSelection: false)
-            tableView.scrollRowToVisible(first)
+            // Include the first section title when entering a grouped list,
+            // even if focus arrived before its viewport was laid out.
+            tableView.scrollRowToVisible(first > 0 && !isNoteRow(first - 1) ? first - 1 : first)
         }
     }
 
@@ -435,9 +536,9 @@ final class SearchViewController: NSViewController {
 
     private func handleListKey(_ event: NSEvent) -> Bool {
         if event.modifierFlags.contains(.control) {
-            if event.charactersIgnoringModifiers == "h" {
-                onFocusSidebar?()
-                return true
+            if let key = event.charactersIgnoringModifiers,
+               let direction = DirectionalFocus.Direction(rawValue: key) {
+                return focusRegions?.move(direction) ?? false
             }
             return false
         }
@@ -523,6 +624,12 @@ extension SearchViewController: NSSearchFieldDelegate {
     func controlTextDidEndEditing(_ notification: Notification) { queryCompletion.hide() }
 
     func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+        if let event = NSApp.currentEvent,
+           event.modifierFlags.intersection([.control, .command, .option, .shift]) == [.control],
+           let key = event.charactersIgnoringModifiers,
+           let direction = DirectionalFocus.Direction(rawValue: key) {
+            return focusRegions?.move(direction) ?? false
+        }
         if NSApp.currentEvent?.modifierFlags.contains(.command) != true, queryCompletion.handleCommand(selector) { return true }
         switch selector {
         case #selector(NSResponder.moveDown(_:)), #selector(NSResponder.insertNewline(_:)):
@@ -547,7 +654,9 @@ extension SearchViewController: NSTableViewDataSource, NSTableViewDelegate {
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         switch rows[row] {
         case .header(let title):
-            return SectionHeaderCellView.make(in: tableView, title: title)
+            let colour: NSColor? = ViewQuery.parse(searchField.stringValue).layout == .tag && title != "No tag"
+                ? session.tagColours.colour(for: title) : nil
+            return SectionHeaderCellView.make(in: tableView, title: title, tagColour: colour)
         case .note(let title, let detail, _):
             return SearchHitCellView.make(in: tableView, title: title, detail: detail)
         }
@@ -558,7 +667,10 @@ extension SearchViewController: NSTableViewDataSource, NSTableViewDelegate {
     }
 
     func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
-        if case .header = rows[row] { return 44 }
+        if case .header = rows[row] {
+            if row == 0, !heatmap.isHidden { return ViewQuery.parse(searchField.stringValue).layout == .tag ? 34 : 28 }
+            return 44
+        }
         return 46
     }
 }

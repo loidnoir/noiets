@@ -1000,10 +1000,144 @@ enum SelfTest {
             try? index.deleteNote(relPath: "SelfTestProp.md")
         }
 
+        result["heatmap"] = heatmapChecks(wc, window: window)
+
         result["hiddenPathIgnored"] = Vault.hasHiddenComponent(".noiets/views.json")
             && Vault.hasHiddenComponent(".trash/x.md")
             && !Vault.hasHiddenComponent("Notes/x.md")
 
+        return result
+    }
+
+    /// Search widgets and focus regions through the same event path as real keys.
+    private static func heatmapChecks(_ wc: MainWindowController, window: NSWindow) -> [String: Any] {
+        var result: [String: Any] = [:]
+        func find<T: NSView>(_ type: T.Type, in view: NSView) -> T? {
+            if let match = view as? T { return match }
+            for child in view.subviews { if let match = find(type, in: child) { return match } }
+            return nil
+        }
+        guard let content = window.contentView,
+              let field = find(NSSearchField.self, in: content),
+              let controller = field.target as? SearchViewController,
+              let widget = find(HeatmapWidgetView.self, in: content),
+              let save = find(FocusableSaveButton.self, in: content),
+              let index = wc.session.index else { return ["available": false] }
+        let oldQuery = field.stringValue
+        let oldFrame = window.frame
+        let autosaveName = window.frameAutosaveName
+        window.setFrameAutosaveName("") // responsive probes must not change the user's saved window size
+        let paths = ["HeatmapProbeA.md", "HeatmapProbeB.md"]
+        defer {
+            for path in paths { try? index.deleteNote(relPath: path) }
+            wc.session.deleteView(named: "HeatmapProbeView")
+            controller.show(mode: .view(.unnamed))
+            field.stringValue = oldQuery
+            _ = field.sendAction(field.action, to: field.target)
+            window.setFrame(oldFrame, display: true)
+            window.setFrameAutosaveName(autosaveName)
+        }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        let stamp = formatter.string(from: Date())
+        for (path, tags) in zip(paths, ["#reading #japanese", "#reading"]) {
+            let markdown = "---\ncreated_at: \(stamp)\n---\n# \(path)\n\(tags)"
+            try? index.upsert(relPath: path, extracted: NoteExtractor.extract(markdown: markdown, fallbackTitle: path),
+                              mtime: 1, size: markdown.count, created: 1)
+        }
+        field.stringValue = "title:HeatmapProbe sort:created layout:month widget:heatmap?tags=reading,japanese"
+        _ = field.sendAction(field.action, to: field.target)
+        window.setFrame(NSRect(x: oldFrame.minX, y: oldFrame.minY, width: 1450, height: oldFrame.height), display: true)
+        content.layoutSubtreeIfNeeded()
+        widget.layoutSubtreeIfNeeded()
+        result["visible"] = !widget.isHiddenOrHasHiddenAncestor
+        result["allCountsNotesOnce"] = widget.graph.data.days.last?.count == 2
+        result["sideSelectorAtWideWidth"] = !widget.tagScroll.isHidden && widget.tagPopup.isHidden
+        result["noGapBetweenGraphAndTags"] = abs(widget.tagScroll.frame.minX - widget.graphScroll.frame.maxX - 8) < 0.5
+        result["selectorMatchesGridHeight"] = abs(widget.tagScroll.frame.height - widget.graph.gridHeight) < 0.5
+        result["widgetHeightFitsContent"] = abs(widget.bounds.height - widget.graph.requiredHeight) < 1
+        result["paletteUsesSharedTagColour"] = wc.paletteItems(for: "#reading").first?.tagColour == wc.session.tagColours.colour(for: "reading")
+
+        func key(_ ch: String, code: UInt16 = 0, control: Bool = false) {
+            guard let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: control ? [.control] : [],
+                                              timestamp: 0, windowNumber: window.windowNumber, context: nil,
+                                              characters: ch, charactersIgnoringModifiers: ch, isARepeat: false, keyCode: code) else { return }
+            if control { NSApp.sendEvent(event) } // exercise the page's event monitor
+            else { window.firstResponder?.keyDown(with: event) } // deterministic even when the probe app is not key
+        }
+        controller.focusSearch()
+        let editor = field.currentEditor() as? NSTextView
+        editor?.setSelectedRange(NSRange(location: 3, length: 0))
+        key("l", code: 37, control: true)
+        result["ctrlLSearchToSave"] = window.firstResponder === save
+        key("h", code: 4, control: true)
+        result["ctrlHSaveToSearch"] = field.currentEditor() === window.firstResponder
+        result["searchCaretRestored"] = (field.currentEditor() as? NSTextView)?.selectedRange().location == 3
+        key("j", code: 38, control: true)
+        result["ctrlJSearchToGraph"] = window.firstResponder === widget.graph
+        key("l", code: 37, control: true)
+        result["ctrlLGraphToTags"] = window.firstResponder === widget.tagTable
+        key("j", code: 38)
+        result["jSelectsReading"] = widget.selectedTag == "reading" && widget.graph.data.days.last?.count == 2
+        let readingColour = widget.graph.colour
+        key("j", code: 38)
+        result["jSelectsJapanese"] = widget.selectedTag == "japanese" && widget.graph.data.days.last?.count == 1
+        result["tagChangesPointColour"] = widget.graph.colour != readingColour
+        let savedQuery = field.stringValue
+        let selectedTag = widget.selectedTag
+        key("/", code: 44)
+        result["slashTagsToSearch"] = field.currentEditor() === window.firstResponder
+        result["slashPreservesTagAndQuery"] = widget.selectedTag == selectedTag && field.stringValue == savedQuery
+        widget.focusTags()
+        key("h", code: 4)
+        result["hTagsToGraph"] = window.firstResponder === widget.graph
+        // Cursor begins on today. Return filters, Escape restores all dates.
+        key("\r", code: 36)
+        result["returnSelectsDay"] = widget.selectedDay != nil
+        key("\u{1B}", code: 53)
+        result["escapeClearsDay"] = widget.selectedDay == nil
+        result["selectionDoesNotRewriteQuery"] = field.stringValue == savedQuery
+        func resultList(in view: NSView) -> NSTableView? {
+            if let table = view as? NSTableView, !(table is NSOutlineView), table !== widget.tagTable { return table }
+            for child in view.subviews { if let table = resultList(in: child) { return table } }
+            return nil
+        }
+        result["tagFiltersNotesBelow"] = resultList(in: controller.view)?.numberOfRows == 2
+        let section = resultList(in: controller.view)?.view(atColumn: 0, row: 0, makeIfNecessary: true)
+        result["frontmatterDrivesDateSection"] = section.flatMap { find(NSTextField.self, in: $0) }?.stringValue == DateSectionTitle.month(for: Date())
+
+        widget.focusTags()
+        window.setFrame(NSRect(x: oldFrame.minX, y: oldFrame.minY, width: 900, height: oldFrame.height), display: true)
+        content.layoutSubtreeIfNeeded()
+        widget.layoutSubtreeIfNeeded()
+        result["compactSelector"] = widget.tagScroll.isHidden && !widget.tagPopup.isHidden
+        result["resizeKeepsVisibleFocus"] = window.firstResponder === widget.tagPopup
+        result["coloursSurviveReload"] = {
+            let before = widget.graph.colour
+            controller.indexChanged()
+            return widget.graph.colour == before
+        }()
+        key("k", code: 40)
+        result["compactJKSelectsTags"] = widget.selectedTag == "reading" && window.firstResponder === widget.tagPopup
+        key("/", code: 44)
+        result["slashCompactTagsToSearch"] = field.currentEditor() === window.firstResponder
+        result["slashCompactPreservesTagAndQuery"] = widget.selectedTag == "reading" && field.stringValue == savedQuery
+        widget.focusTags()
+        key("j", code: 38, control: true)
+        result["compactCtrlJToGraph"] = window.firstResponder === widget.graph
+
+        wc.session.upsertView(name: "HeatmapProbeView", query: savedQuery)
+        wc.showView(ViewRef(name: "HeatmapProbeView", query: savedQuery, isBuiltin: false))
+        field.stringValue = savedQuery + " limit:50"
+        _ = field.sendAction(field.action, to: field.target)
+        content.layoutSubtreeIfNeeded()
+        controller.focusSearch()
+        key("l", code: 37, control: true)
+        key("\r", code: 36)
+        result["returnOnSavePersistsView"] = wc.session.savedViews.contains {
+            $0.name == "HeatmapProbeView" && $0.query == savedQuery + " limit:50"
+        }
+        result["saveHidingRestoresSearchFocus"] = save.isHidden && field.currentEditor() === window.firstResponder
         return result
     }
 
